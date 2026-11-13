@@ -42,11 +42,11 @@ export class AcpClient {
     return this.send(method, params);
   }
 
-  async loadSession(sessionId: string, cwd: string): Promise<void> {
+  async loadSession(sessionId: string, cwd: string): Promise<Obj> {
     await this.ensure();
     this.loading.add(sessionId);
     try {
-      await this.send("session/load", { sessionId, cwd, mcpServers: [] });
+      return await this.send("session/load", { sessionId, cwd, mcpServers: [] });
     } finally {
       this.loading.delete(sessionId);
     }
@@ -170,8 +170,10 @@ export class AcpClient {
     if (!p) return;
     this.pending.delete(id as number);
     const error = msg.error as Obj | undefined;
-    if (error) p.reject(new Error(String(error.message ?? "acp error")));
-    else p.resolve((msg.result ?? {}) as Obj);
+    if (error) {
+      const message = String(error.message ?? "acp error");
+      p.reject(new Error(typeof error.data === "string" ? `${message}: ${error.data}` : message));
+    } else p.resolve((msg.result ?? {}) as Obj);
   }
 
   private onNotification(method: string, params: Obj): void {

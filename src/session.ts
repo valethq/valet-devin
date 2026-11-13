@@ -1,6 +1,7 @@
 import type { AgentEvent, AgentSession, ModelContent } from "@valethq/sdk";
 import type { AcpClient } from "./acp";
-import { mapStop, mapUpdate, newUpdateState } from "./events";
+import { optionValues, resolveModel } from "./models";
+import { mapStop, mapUpdate, newUpdateState, type UpdateState } from "./events";
 
 export interface SessionInit {
   client: AcpClient;
@@ -8,6 +9,7 @@ export interface SessionInit {
   cwd: string;
   model: string;
   mode: string;
+  configOptions: unknown;
   reseeded: boolean;
   onClose(): void;
 }
@@ -15,10 +17,15 @@ export interface SessionInit {
 export class DevinSession implements AgentSession {
   readonly reseeded: boolean;
   private generation: number;
+  private interrupted = "";
 
   constructor(private init: SessionInit) {
     this.reseeded = init.reseeded;
     this.generation = init.client.generation;
+  }
+
+  get options(): unknown {
+    return this.init.configOptions;
   }
 
   get resumeId(): string {
@@ -28,26 +35,43 @@ export class DevinSession implements AgentSession {
   async configure(): Promise<void> {
     const { client, id, mode, model } = this.init;
     await client.request("session/set_mode", { sessionId: id, modeId: mode });
-    if (model)
-      await client.request("session/set_config_option", { sessionId: id, configId: "model", value: model });
+    if (model) await this.applyModel(model);
+  }
+
+  private async setOption(configId: string, value: string): Promise<void> {
+    const r = await this.init.client.request("session/set_config_option", {
+      sessionId: this.init.id,
+      configId,
+      value,
+    });
+    if (r.configOptions) this.init.configOptions = r.configOptions;
+  }
+
+  private async applyModel(id: string): Promise<void> {
+    const resolved = resolveModel(id, { models: optionValues(this.init.configOptions, "model") });
+    if (!resolved) throw new Error(`model "${id}" is not available in devin acp`);
+    await this.setOption("model", resolved.model);
+    if (
+      resolved.thoughtLevel &&
+      optionValues(this.init.configOptions, "thought_level").includes(resolved.thoughtLevel)
+    )
+      await this.setOption("thought_level", resolved.thoughtLevel);
+    if (optionValues(this.init.configOptions, "speed").length)
+      await this.setOption("speed", resolved.speed ?? "standard");
   }
 
   private async ready(): Promise<void> {
     const { client, id, cwd } = this.init;
     await client.ensure();
     if (this.generation === client.generation) return;
-    await client.loadSession(id, cwd);
+    this.init.configOptions = (await client.loadSession(id, cwd)).configOptions ?? this.init.configOptions;
     this.generation = client.generation;
     await this.configure();
   }
 
   async setModel(model: string): Promise<void> {
     await this.ready();
-    await this.init.client.request("session/set_config_option", {
-      sessionId: this.init.id,
-      configId: "model",
-      value: model,
-    });
+    await this.applyModel(model);
     this.init.model = model;
   }
 
@@ -80,7 +104,13 @@ export class DevinSession implements AgentSession {
     });
     const cancel = () => client.notify("session/cancel", { sessionId: id });
     signal.addEventListener("abort", cancel);
-    const texts = [input.preamble, ...input.content.map((c) => (c.type === "text" ? c.text : undefined))];
+    const partial = this.interrupted;
+    this.interrupted = "";
+    const texts = [
+      partial,
+      input.preamble,
+      ...input.content.map((c) => (c.type === "text" ? c.text : undefined)),
+    ];
     const prompt = texts.filter((t): t is string => !!t).map((text) => ({ type: "text", text }));
     client
       .request("session/prompt", { sessionId: id, prompt })
@@ -93,6 +123,7 @@ export class DevinSession implements AgentSession {
             inputTokens: usage.inputTokens,
             outputTokens: usage.outputTokens,
           });
+          if (r.stopReason === "cancelled" || signal.aborted) this.interrupted = partialOutput(state);
           push({ type: "finish", ...mapStop(r.stopReason) });
         },
         (e: Error) => push({ type: "finish", reason: "error", error: e.message }),
@@ -114,4 +145,13 @@ export class DevinSession implements AgentSession {
       client.unlisten(id);
     }
   }
+}
+
+function partialOutput(state: UpdateState): string {
+  const parts = [...state.open].map(
+    ([callId, title]) => `${title}:\n${(state.outputs.get(callId) ?? "").slice(-4000)}`,
+  );
+  return parts.length
+    ? `[The previous turn was stopped by the user. Partial output of the interrupted tool call(s) so far:\n${parts.join("\n")}]`
+    : "";
 }

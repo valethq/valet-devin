@@ -1,7 +1,7 @@
 import type { AgentProvider, AgentSession, PluginContext } from "@valethq/sdk";
 import { AcpClient } from "./acp";
 import { type DevinConfig, spawnCommand } from "./config";
-import { modelLister } from "./models";
+import { modelLister, optionValues } from "./models";
 import { DevinSession } from "./session";
 
 export const PROVIDER_KEY = "devin-cli";
@@ -13,32 +13,44 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
   const cfg = ctx.config ?? {};
   const client = new AcpClient({ command: spawnCommand(cfg), denyKinds: cfg.denyKinds ?? [], log: ctx.log });
   const sessions = new Set<DevinSession>();
+  const acpModels = async () => {
+    const live = [...sessions].map((s) => optionValues(s.options, "model")).find((v) => v.length);
+    if (live) return live;
+    const r = await client.request("session/new", { cwd: process.cwd(), mcpServers: [] });
+    return optionValues(r.configOptions, "model");
+  };
 
   const provider: AgentProvider = {
     kind: "agent",
     id: PROVIDER_KEY,
     label: "Devin CLI",
-    listModels: modelLister(cfg),
+    listModels: modelLister(cfg, undefined, acpModels),
     async open(opts): Promise<AgentSession> {
       const session = ctx.store.sessions.get(opts.sessionId);
       const project = session && ctx.store.projects.get(session.projectId);
       const cwd = project?.workspaceDir ?? opts.cwd;
       await client.ensure();
       let id: string | undefined;
+      let configOptions: unknown;
       if (opts.resumeId && client.loadSupported) {
         try {
-          await client.loadSession(opts.resumeId, cwd);
+          configOptions = (await client.loadSession(opts.resumeId, cwd)).configOptions;
           id = opts.resumeId;
         } catch (e) {
           ctx.log.warn("session/load failed, reseeding", { resumeId: opts.resumeId, error: String(e) });
         }
       }
-      if (!id) id = String((await client.request("session/new", { cwd, mcpServers: [] })).sessionId);
+      if (!id) {
+        const r = await client.request("session/new", { cwd, mcpServers: [] });
+        id = String(r.sessionId);
+        configOptions = r.configOptions;
+      }
       const devin: DevinSession = new DevinSession({
         client,
         id,
         cwd,
         model: opts.model,
+        configOptions,
         mode: cfg.permissionMode ?? "accept-edits",
         reseeded: id !== opts.resumeId && opts.resumeId !== undefined,
         onClose: () => sessions.delete(devin),

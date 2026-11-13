@@ -8,6 +8,18 @@ const permWaiters = new Map<number, (r: Msg) => void>();
 let seq = 0;
 let reqId = 1000;
 
+const opt = (id: string, values: string[]) => ({
+  id,
+  type: "select",
+  currentValue: values[0],
+  options: [{ group: "g", options: values.map((value) => ({ value, name: value })) }],
+});
+const configOptions = () => [
+  opt("model", ["swe-2-high", "claude-opus-5-5-medium", "gpt-x"]),
+  opt("thought_level", ["low", "medium", "high"]),
+  opt("speed", ["standard", "fast"]),
+];
+
 const out = (m: object) => process.stdout.write(`${JSON.stringify(m)}\n`);
 const reply = (id: unknown, result: object) => out({ jsonrpc: "2.0", id, result });
 const update = (sessionId: string, u: object) =>
@@ -22,6 +34,19 @@ async function prompt(id: unknown, p: Msg) {
   const usage = { inputTokens: 10, outputTokens: 5, cachedReadTokens: 0, totalTokens: 15 };
   out({ jsonrpc: "2.0", method: "_cognition.ai/noise", params: {} });
   if (input.includes("crash")) process.exit(1);
+  if (input.includes("partial")) {
+    update(sid, { sessionUpdate: "tool_call", toolCallId: "p1", title: "Sleep", kind: "execute" });
+    for (const t of ["ab", "abc"]) {
+      update(sid, {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "p1",
+        status: "in_progress",
+        content: [{ type: "content", content: { type: "text", text: t } }],
+      });
+    }
+    await new Promise<void>((r) => waiters.set(sid, r));
+    return reply(id, { stopReason: "cancelled", usage });
+  }
   if (input.includes("slow")) {
     text(sid, "agent_message_chunk", "working");
     await new Promise<void>((r) => waiters.set(sid, r));
@@ -74,17 +99,30 @@ async function handle(m: Msg) {
     case "initialize":
       return reply(id, { protocolVersion: 1, agentCapabilities: { loadSession: true } });
     case "session/new":
-      return reply(id, { sessionId: `fake-${++seq}-${Date.now()}`, modes: {}, configOptions: [] });
+      return reply(id, {
+        sessionId: `fake-${++seq}-${Date.now()}`,
+        modes: {},
+        configOptions: configOptions(),
+      });
     case "session/load":
       if (!String(params.sessionId).startsWith("fake-")) {
         return out({ jsonrpc: "2.0", id, error: { code: -32602, message: "unknown session" } });
       }
       text(params.sessionId, "agent_message_chunk", "REPLAYED");
       text(params.sessionId, "user_message_chunk", "REPLAYED");
-      return reply(id, { configOptions: [] });
+      return reply(id, { configOptions: configOptions() });
     case "session/set_mode":
-    case "session/set_config_option":
-      return reply(id, { configOptions: [] });
+      return reply(id, { configOptions: configOptions() });
+    case "session/set_config_option": {
+      const values = configOptions()
+        .find((o) => o.id === params.configId)
+        ?.options[0]?.options.map((o) => o.value);
+      if (!values?.includes(params.value)) {
+        const data = `Invalid value '${params.value}' for config option '${params.configId}'`;
+        return out({ jsonrpc: "2.0", id, error: { code: -32602, message: "Invalid params", data } });
+      }
+      return reply(id, { configOptions: configOptions() });
+    }
     case "session/prompt":
       return prompt(id, params);
     case "session/cancel":

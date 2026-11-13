@@ -4,11 +4,12 @@ type Obj = Record<string, unknown>;
 
 export interface UpdateState {
   outputs: Map<string, string>;
+  open: Map<string, string>;
   contextTokens?: number;
 }
 
 export function newUpdateState(): UpdateState {
-  return { outputs: new Map() };
+  return { outputs: new Map(), open: new Map() };
 }
 
 function textOf(content: unknown): string {
@@ -26,7 +27,16 @@ function chunkText(u: Obj): string {
   return c?.type === "text" && typeof c.text === "string" ? c.text : "";
 }
 
+function cumulative(callId: string, full: string, state: UpdateState): AgentEvent[] {
+  const prev = state.outputs.get(callId) ?? "";
+  if (!full) return [];
+  state.outputs.set(callId, full);
+  const delta = full.startsWith(prev) ? full.slice(prev.length) : "";
+  return delta ? [{ type: "tool-update", callId, outputDelta: delta }] : [];
+}
+
 function end(callId: string, status: "completed" | "failed", state: UpdateState): AgentEvent {
+  state.open.delete(callId);
   return {
     type: "tool-end",
     callId,
@@ -49,18 +59,16 @@ export function mapUpdate(u: Obj, state: UpdateState): AgentEvent[] {
     case "tool_call": {
       const title = typeof u.title === "string" ? u.title : undefined;
       const name = typeof u.kind === "string" ? u.kind : (title ?? "tool");
-      state.outputs.set(callId, textOf(u.content));
+      state.outputs.set(callId, "");
+      state.open.set(callId, title ?? name);
       const events: AgentEvent[] = [{ type: "tool-start", callId, name, title, input: u.rawInput }];
+      events.push(...cumulative(callId, textOf(u.content), state));
       if (u.status === "completed" || u.status === "failed") events.push(end(callId, u.status, state));
       return events;
     }
     case "tool_call_update": {
-      const events: AgentEvent[] = [];
-      const delta = textOf(u.content);
-      if (delta) {
-        state.outputs.set(callId, (state.outputs.get(callId) ?? "") + delta);
-        events.push({ type: "tool-update", callId, outputDelta: delta });
-      }
+      const events = cumulative(callId, textOf(u.content), state);
+      if (typeof u.title === "string" && state.open.has(callId)) state.open.set(callId, u.title);
       if (u.status === "in_progress") events.push({ type: "tool-update", callId, status: "running" });
       if (u.status === "completed" || u.status === "failed") events.push(end(callId, u.status, state));
       return events;

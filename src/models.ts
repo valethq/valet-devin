@@ -31,13 +31,58 @@ export function parseModels(output: string): { id: string; name: string; context
   return models;
 }
 
-export function modelLister(cfg: DevinConfig, run: () => Promise<string> = runDevinModels) {
+const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+const EFFORT_SUFFIX = new RegExp(`-(${EFFORTS.join("|")})$`);
+
+export interface ResolvedModel {
+  model: string;
+  thoughtLevel?: string;
+  speed?: "fast";
+}
+
+export function resolveModel(id: string, options: { models: string[] }): ResolvedModel | null {
+  const { models } = options;
+  if (models.includes(id)) return { model: id };
+  let rest = id.replace(/-priority$/, "");
+  const fast = /-(fast|lightning)$/.test(rest);
+  rest = rest.replace(/-(fast|lightning)$/, "");
+  const thoughtLevel = EFFORT_SUFFIX.exec(rest)?.[1];
+  rest = rest.replace(EFFORT_SUFFIX, "");
+  const withEffort = ["medium", "high"].map((e) => `${rest}-${e}`);
+  const model =
+    [rest, ...withEffort].find((m) => models.includes(m)) ??
+    models.find((m) => m.startsWith(`${rest}-`) && EFFORTS.includes(m.slice(rest.length + 1)));
+  if (!model) return null;
+  return { model, ...(thoughtLevel && { thoughtLevel }), ...(fast && { speed: "fast" as const }) };
+}
+
+type Option = { value?: unknown; options?: Option[] };
+
+export function optionValues(configOptions: unknown, configId: string): string[] {
+  const opt = (
+    Array.isArray(configOptions) ? (configOptions as { id?: string; options?: Option[] }[]) : []
+  ).find((o) => o.id === configId);
+  const flat = (list: Option[] = []): string[] =>
+    list.flatMap((o) => (o.options ? flat(o.options) : typeof o.value === "string" ? [o.value] : []));
+  return flat(opt?.options);
+}
+
+export function modelLister(
+  cfg: DevinConfig,
+  run: () => Promise<string> = runDevinModels,
+  acpModels: () => Promise<string[] | undefined> = async () => undefined,
+) {
   let cache: { at: number; models: ModelInfo[] } | undefined;
   return async (): Promise<ModelInfo[]> => {
     if (cache && Date.now() - cache.at < TTL_MS) return cache.models;
     try {
-      const parsed = parseModels(await run());
+      let parsed = parseModels(await run());
       if (!parsed.length) throw new Error("no models parsed");
+      const values = await acpModels().catch(() => undefined);
+      if (values?.length) {
+        const filtered = parsed.filter((m) => resolveModel(m.id, { models: values }));
+        if (filtered.length) parsed = filtered;
+      }
       cache = { at: Date.now(), models: parsed.map(toModelInfo) };
       return cache.models;
     } catch {

@@ -1,6 +1,9 @@
 import { afterAll, expect, test } from "bun:test";
+import { AcpClient } from "../src/acp";
 import { calls, collect, fakeConfig, fakeCtx, input } from "./helpers";
 
+const noop = () => {};
+const fakeCtxLog = { debug: noop, info: noop, warn: noop, error: noop };
 const disposers: (() => Promise<void>)[] = [];
 afterAll(async () => {
   for (const d of disposers) await d();
@@ -40,13 +43,17 @@ test("open, prompt maps events, setModel", async () => {
   ]);
   expect(events.at(-2)).toEqual({ type: "usage", contextTokens: 1234, inputTokens: 10, outputTokens: 5 });
   expect(events.at(-1)).toEqual({ type: "finish", reason: "stop" });
-  await s.setModel?.("gpt-x");
+  await s.setModel?.("gpt-x-high-fast");
+  await expect(s.setModel?.("nope")).rejects.toThrow('model "nope" is not available in devin acp');
   const c = calls(logFile);
   expect(c.find((x) => x.method === "session/new")?.params).toEqual({ cwd: "/tmp", mcpServers: [] });
   expect(c.find((x) => x.method === "session/set_mode")?.params.modeId).toBe("accept-edits");
   expect(c.filter((x) => x.method === "session/set_config_option").map((x) => x.params.value)).toEqual([
     "swe-2-high",
+    "standard",
     "gpt-x",
+    "high",
+    "fast",
   ]);
   await s.close();
 });
@@ -92,3 +99,36 @@ test("process exit fails prompt, then restarts with reload", async () => {
   expect(again.at(-1)).toEqual({ type: "finish", reason: "stop" });
   expect(calls(logFile).filter((x) => x.method === "session/load")).toHaveLength(1);
 }, 15_000);
+
+test("stop carries partial tool output into the next prompt", async () => {
+  const { open, logFile } = setup();
+  const s = await open();
+  const ac = new AbortController();
+  const p = collect(s.prompt(input("partial"), ac.signal));
+  await Bun.sleep(300);
+  ac.abort();
+  const events = await p;
+  expect(
+    events.filter((e) => e.type === "tool-update").map((e) => (e as { outputDelta?: string }).outputDelta),
+  ).toEqual(["ab", undefined, "c", undefined]);
+  await collect(s.prompt(input("ping"), new AbortController().signal));
+  await collect(s.prompt(input("ping"), new AbortController().signal));
+  const sent = calls(logFile)
+    .filter((x) => x.method === "session/prompt")
+    .map((x) => (x.params.prompt as { text: string }[]).map((b) => b.text));
+  expect(sent[1]).toEqual([
+    "[The previous turn was stopped by the user. Partial output of the interrupted tool call(s) so far:\nSleep:\nabc]",
+    "ping",
+  ]);
+  expect(sent[2]).toEqual(["ping"]);
+});
+
+test("rpc errors carry data", async () => {
+  const { cfg } = fakeConfig();
+  const client = new AcpClient({ command: cfg.command as string[], denyKinds: [], log: fakeCtxLog });
+  disposers.push(async () => client.dispose());
+  const { sessionId } = await client.request("session/new", { cwd: "/tmp", mcpServers: [] });
+  await expect(
+    client.request("session/set_config_option", { sessionId, configId: "model", value: "x" }),
+  ).rejects.toThrow("Invalid params: Invalid value 'x' for config option 'model'");
+});

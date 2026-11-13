@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { mapStop, mapUpdate, newUpdateState } from "../src/events";
-import { modelLister, parseModels } from "../src/models";
+import { modelLister, parseModels, resolveModel } from "../src/models";
 
 const SAMPLE = `Available models (51 families)
 
@@ -62,7 +62,7 @@ test("mapUpdate", () => {
   ]);
   expect(
     mapUpdate(
-      { sessionUpdate: "tool_call_update", toolCallId: "1", status: "completed", content: text("b") },
+      { sessionUpdate: "tool_call_update", toolCallId: "1", status: "completed", content: text("ab") },
       s,
     ),
   ).toEqual([
@@ -84,4 +84,42 @@ test("mapStop", () => {
   expect(mapStop("cancelled")).toEqual({ reason: "cancelled" });
   expect(mapStop("max_tokens")).toEqual({ reason: "length" });
   expect(mapStop("refusal").reason).toBe("error");
+});
+
+const ACP = ["swe-2-high", "claude-opus-5-5-medium", "gpt-6-sol-medium", "glm-5-2"];
+
+test("resolveModel", () => {
+  const r = (id: string) => resolveModel(id, { models: ACP });
+  expect(r("swe-2-high")).toEqual({ model: "swe-2-high" });
+  expect(r("claude-opus-5-5-low")).toEqual({ model: "claude-opus-5-5-medium", thoughtLevel: "low" });
+  expect(r("swe-2-medium-lightning")).toEqual({ model: "swe-2-high", thoughtLevel: "medium", speed: "fast" });
+  expect(r("glm-5-2-high-fast-priority")).toEqual({ model: "glm-5-2", thoughtLevel: "high", speed: "fast" });
+  expect(r("gpt-6-sol-max")).toEqual({ model: "gpt-6-sol-medium", thoughtLevel: "max" });
+  expect(r("unknown-low")).toBeNull();
+});
+
+test("modelLister filters to ACP-resolvable ids", async () => {
+  const out = "  swe-2-low  A  [1K context]\n  nope-high  B  [1K context]\n  glm-5-2-fast  C  [1K context]\n";
+  const ids = async (acp: () => Promise<string[] | undefined>) =>
+    (await modelLister({}, async () => out, acp)()).map((m) => m.id);
+  expect(await ids(async () => ACP)).toEqual(["swe-2-low", "glm-5-2-fast"]);
+  expect(await ids(async () => undefined)).toHaveLength(3);
+});
+
+test("cumulative tool output", () => {
+  const s = newUpdateState();
+  const upd = (t: string, status?: string) =>
+    mapUpdate(
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1",
+        status,
+        content: [{ type: "content", content: { type: "text", text: t } }],
+      },
+      s,
+    );
+  expect(upd("a")).toEqual([{ type: "tool-update", callId: "1", outputDelta: "a" }]);
+  expect(upd("ab")).toEqual([{ type: "tool-update", callId: "1", outputDelta: "b" }]);
+  expect(upd("x")).toEqual([]);
+  expect(upd("abc", "completed")).toEqual([{ type: "tool-end", callId: "1", status: "done", output: "abc" }]);
 });
