@@ -173,6 +173,32 @@ test("cumulative tool output", () => {
     );
   expect(upd("a")).toEqual([{ type: "tool-update", callId: "1", outputDelta: "a" }]);
   expect(upd("ab")).toEqual([{ type: "tool-update", callId: "1", outputDelta: "b" }]);
-  expect(upd("x")).toEqual([]);
-  expect(upd("abc", "completed")).toEqual([{ type: "tool-end", callId: "1", status: "done", output: "abc" }]);
+  expect(upd("x")).toEqual([{ type: "tool-update", callId: "1", outputDelta: "\nx" }]);
+  expect(upd("ab\nxc", "completed")).toEqual([
+    { type: "tool-update", callId: "1", outputDelta: "c" },
+    { type: "tool-end", callId: "1", status: "done", output: "ab\nxc" },
+  ]);
+});
+
+test("failed call status sticks over a later completed update", () => {
+  const s = newUpdateState();
+  const upd = (status: string, t: string) =>
+    mapUpdate(
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1",
+        status,
+        content: [{ type: "content", content: { type: "text", text: t } }],
+      },
+      s,
+    );
+  mapUpdate({ sessionUpdate: "tool_call", toolCallId: "1", title: "Run", kind: "execute" }, s);
+  upd("in_progress", "tick1\n");
+  expect(upd("failed", "Canceled due to user interrupt").at(-1)).toMatchObject({
+    type: "tool-end",
+    status: "error",
+  });
+  expect(upd("completed", "tick1\n").at(-1)).toMatchObject({ type: "tool-end", status: "done" });
+  expect(s.calls.get("1")).toEqual({ title: "Run", status: "failed" });
+  expect(s.outputs.get("1")).toBe("tick1\n\nCanceled due to user interrupt\ntick1\n");
 });

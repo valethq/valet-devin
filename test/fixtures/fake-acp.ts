@@ -36,7 +36,7 @@ async function prompt(id: unknown, p: Msg) {
   if (input.includes("crash")) process.exit(1);
   if (input.includes("partial")) {
     update(sid, { sessionUpdate: "tool_call", toolCallId: "p1", title: "Sleep", kind: "execute" });
-    for (const t of ["ab", "abc"]) {
+    for (const t of ["tick1\n", "tick1\ntick2\n"]) {
       update(sid, {
         sessionUpdate: "tool_call_update",
         toolCallId: "p1",
@@ -45,6 +45,19 @@ async function prompt(id: unknown, p: Msg) {
       });
     }
     await new Promise<void>((r) => waiters.set(sid, r));
+    // live devin acp order on cancel: failed ("Canceled..."), then completed with captured output
+    update(sid, {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "p1",
+      status: "failed",
+      content: [{ type: "content", content: { type: "text", text: "Canceled due to user interrupt" } }],
+    });
+    update(sid, {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "p1",
+      status: "completed",
+      content: [{ type: "content", content: { type: "text", text: "tick1\ntick2\n" } }],
+    });
     return reply(id, { stopReason: "cancelled", usage });
   }
   if (input.includes("slow")) {

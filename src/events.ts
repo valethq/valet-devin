@@ -4,13 +4,13 @@ type Obj = Record<string, unknown>;
 
 export interface UpdateState {
   outputs: Map<string, string>;
-  open: Map<string, string>;
+  calls: Map<string, { title: string; status: "open" | "completed" | "failed" }>;
   contextTokens?: number;
   log?: Logger;
 }
 
 export function newUpdateState(log?: Logger, contextTokens?: number): UpdateState {
-  return { outputs: new Map(), open: new Map(), log, contextTokens };
+  return { outputs: new Map(), calls: new Map(), log, contextTokens };
 }
 
 function textOf(content: unknown): string {
@@ -31,13 +31,14 @@ function chunkText(u: Obj): string {
 function cumulative(callId: string, full: string, state: UpdateState): AgentEvent[] {
   const prev = state.outputs.get(callId) ?? "";
   if (!full) return [];
-  state.outputs.set(callId, full);
-  const delta = full.startsWith(prev) ? full.slice(prev.length) : "";
+  const delta = prev && !full.startsWith(prev) ? `\n${full}` : full.slice(prev.length);
+  state.outputs.set(callId, prev + delta);
   return delta ? [{ type: "tool-update", callId, outputDelta: delta }] : [];
 }
 
 function end(callId: string, status: "completed" | "failed", state: UpdateState): AgentEvent {
-  state.open.delete(callId);
+  const c = state.calls.get(callId);
+  if (c && c.status !== "failed") c.status = status;
   return {
     type: "tool-end",
     callId,
@@ -61,7 +62,7 @@ export function mapUpdate(u: Obj, state: UpdateState): AgentEvent[] {
       const title = typeof u.title === "string" ? u.title : undefined;
       const name = typeof u.kind === "string" ? u.kind : (title ?? "tool");
       state.outputs.set(callId, "");
-      state.open.set(callId, title ?? name);
+      state.calls.set(callId, { title: title ?? name, status: "open" });
       const events: AgentEvent[] = [{ type: "tool-start", callId, name, title, input: u.rawInput }];
       events.push(...cumulative(callId, textOf(u.content), state));
       if (u.status === "completed" || u.status === "failed") events.push(end(callId, u.status, state));
@@ -69,7 +70,9 @@ export function mapUpdate(u: Obj, state: UpdateState): AgentEvent[] {
     }
     case "tool_call_update": {
       const events = cumulative(callId, textOf(u.content), state);
-      if (typeof u.title === "string" && state.open.has(callId)) state.open.set(callId, u.title);
+      const c = state.calls.get(callId) ?? { title: "tool", status: "open" as const };
+      state.calls.set(callId, c);
+      if (typeof u.title === "string" && c.status === "open") c.title = u.title;
       if (u.status === "in_progress") events.push({ type: "tool-update", callId, status: "running" });
       if (u.status === "completed" || u.status === "failed") events.push(end(callId, u.status, state));
       return events;

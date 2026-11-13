@@ -151,9 +151,9 @@ export class DevinSession implements AgentSession {
 }
 
 function partialOutput(state: UpdateState): string {
-  const parts = [...state.open].map(
-    ([callId, title]) => `${title}:\n${(state.outputs.get(callId) ?? "").slice(-4000)}`,
-  );
+  const parts = [...state.calls]
+    .filter(([, c]) => c.status !== "completed")
+    .map(([callId, c]) => `${c.title}:\n${(state.outputs.get(callId) ?? "").slice(-4000)}`);
   return parts.length
     ? `[The previous turn was stopped by the user. Partial output of the interrupted tool call(s) so far:\n${parts.join("\n")}]`
     : "";

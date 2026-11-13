@@ -110,16 +110,38 @@ test("stop carries partial tool output into the next prompt", async () => {
   const events = await p;
   expect(
     events.filter((e) => e.type === "tool-update").map((e) => (e as { outputDelta?: string }).outputDelta),
-  ).toEqual(["ab", undefined, "c", undefined]);
+  ).toEqual([
+    "tick1\n",
+    undefined,
+    "tick2\n",
+    undefined,
+    "\nCanceled due to user interrupt",
+    "\ntick1\ntick2\n",
+  ]);
+  expect(events.filter((e) => e.type === "tool-end")).toEqual([
+    {
+      type: "tool-end",
+      callId: "p1",
+      status: "error",
+      output: "tick1\ntick2\n\nCanceled due to user interrupt",
+    },
+    {
+      type: "tool-end",
+      callId: "p1",
+      status: "done",
+      output: "tick1\ntick2\n\nCanceled due to user interrupt\ntick1\ntick2\n",
+    },
+  ]);
   await collect(s.prompt(input("ping"), new AbortController().signal));
   await collect(s.prompt(input("ping"), new AbortController().signal));
   const sent = calls(logFile)
     .filter((x) => x.method === "session/prompt")
     .map((x) => (x.params.prompt as { text: string }[]).map((b) => b.text));
-  expect(sent[1]).toEqual([
-    "[The previous turn was stopped by the user. Partial output of the interrupted tool call(s) so far:\nSleep:\nabc]",
-    "ping",
-  ]);
+  expect(sent[1]?.[0]).toBe(
+    "[The previous turn was stopped by the user. Partial output of the interrupted tool call(s) so far:\nSleep:\ntick1\ntick2\n\nCanceled due to user interrupt\ntick1\ntick2\n]",
+  );
+  expect(sent[1]?.[0]).toContain("tick2");
+  expect(sent[1]?.[1]).toBe("ping");
   expect(sent[2]).toEqual(["ping"]);
 });
 
