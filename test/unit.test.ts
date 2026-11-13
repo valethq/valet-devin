@@ -121,7 +121,7 @@ test("tool-end carries terminal exit code", () => {
   expect(none).not.toHaveProperty("exitCode");
 });
 
-test("usage drop over 30% surfaces a compaction notice", () => {
+test("usage drop over 30% surfaces a compaction marker", () => {
   const logs: { level: string; msg: string }[] = [];
   const log = (level: string) => (msg: string) => logs.push({ level, msg });
   const s = newUpdateState(
@@ -132,11 +132,7 @@ test("usage drop over 30% surfaces a compaction notice", () => {
     { type: "usage", contextTokens: 212200 },
   ]);
   expect(mapUpdate({ sessionUpdate: "usage_update", used: 83500 }, s)).toEqual([
-    {
-      type: "notice",
-      level: "info",
-      text: "Context compacted by Devin CLI: 212.2k → 83.5k tokens",
-    },
+    { type: "compaction" },
     { type: "usage", contextTokens: 83500 },
   ]);
   expect(logs).toContainEqual({ level: "info", msg: "devin cli compacted the context" });

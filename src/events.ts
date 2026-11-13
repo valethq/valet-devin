@@ -128,11 +128,7 @@ export function mapUpdate(u: Obj, state: UpdateState): AgentEvent[] {
       const events: AgentEvent[] = [];
       if (prev !== undefined && u.used < prev * 0.7) {
         state.log?.info("devin cli compacted the context", { from: prev, to: u.used });
-        events.push({
-          type: "notice",
-          level: "info",
-          text: `Context compacted by Devin CLI: ${k(prev)} → ${k(u.used)} tokens`,
-        });
+        events.push({ type: "compaction" });
       }
       events.push({ type: "usage", contextTokens: u.used });
       return events;
@@ -143,8 +139,6 @@ export function mapUpdate(u: Obj, state: UpdateState): AgentEvent[] {
       return [];
   }
 }
-
-const k = (n: number) => `${(n / 1000).toFixed(1)}k`;
 
 export function mapStop(reason: unknown): {
   reason: "stop" | "cancelled" | "length" | "error";

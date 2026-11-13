@@ -150,17 +150,13 @@ test("stop carries partial tool output into the next prompt", async () => {
   expect(sent[2]).toEqual(["ping"]);
 });
 
-test("compaction surfaces a visible notice and info log", async () => {
+test("compaction surfaces a marker event and info log", async () => {
   const { open, logs } = setup();
   const s = await open();
   const events = await collect(s.prompt(input("compact"), new AbortController().signal));
   expect(events.slice(0, 3)).toEqual([
     { type: "usage", contextTokens: 212200 },
-    {
-      type: "notice",
-      level: "info",
-      text: "Context compacted by Devin CLI: 212.2k → 83.5k tokens",
-    },
+    { type: "compaction" },
     { type: "usage", contextTokens: 83500 },
   ]);
   expect(logs).toContainEqual({
