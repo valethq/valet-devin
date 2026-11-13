@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mapStop, mapUpdate, newUpdateState } from "../src/events";
+import { drainText, mapStop, mapUpdate, newUpdateState } from "../src/events";
 import { modelLister, parseModels, resolveModel } from "../src/models";
 
 const SAMPLE = `Available models (51 families)
@@ -230,4 +230,92 @@ test("failed call status sticks over a later completed update", () => {
   expect(upd("completed", "tick1\n").at(-1)).toMatchObject({ type: "tool-end", status: "done" });
   expect(s.calls.get("1")).toEqual({ title: "Run", status: "failed" });
   expect(s.outputs.get("1")).toBe("tick1\n\nCanceled due to user interrupt\ntick1\n");
+});
+
+const LT = "<" + "|";
+const chunkUpd = (sessionUpdate: string, text: string) => ({
+  sessionUpdate,
+  content: { type: "text", text },
+});
+const texts = (events: { type: string; text?: string }[]) =>
+  events.filter((e) => e.type === "text-delta" || e.type === "reasoning-delta");
+
+test("leaked control tokens are dropped from message text", () => {
+  const warns: string[] = [];
+  const s = newUpdateState({
+    debug: () => {},
+    info: () => {},
+    warn: (m: string) => warns.push(m),
+    error: () => {},
+  });
+  const msg = (t: string) => mapUpdate(chunkUpd("agent_message_chunk", t), s);
+  const leaked = `mango${LT}close|>argument${LT}sep|>${LT}close|>call${LT}sep|>${LT}close|>tools${LT}sep|>`;
+  const chunks = [
+    "man",
+    `go${LT}clo`,
+    "se|>arg",
+    `ument${LT}sep|>${LT}close|>call`,
+    `${LT}sep|>${LT}close|>tools`,
+    `${LT}sep|>`,
+  ];
+  expect(chunks.join("")).toBe(leaked);
+  expect(
+    chunks
+      .flatMap((c) => texts(msg(c)))
+      .map((e) => e.text)
+      .join(""),
+  ).toBe("mango");
+  expect(warns).toEqual(["devin cli leaked control tokens; dropped the rest of the message"]);
+});
+
+test("plain angle brackets pass through once disambiguated", () => {
+  const s = newUpdateState();
+  const msg = (t: string) =>
+    texts(mapUpdate(chunkUpd("agent_message_chunk", t), s))
+      .map((e) => e.text)
+      .join("");
+  const parts = ["a <", " b and x <", "| y plus z ", `${LT}nope!`, "trail <"];
+  const out =
+    parts.map(msg).join("") +
+    texts(drainText(s))
+      .map((e) => e.text)
+      .join("");
+  expect(out).toBe(`a < b and x ${LT} y plus z ${LT}nope!trail <`);
+});
+
+test("a following tool call unmutes the message stream", () => {
+  const s = newUpdateState();
+  const msg = (t: string) => texts(mapUpdate(chunkUpd("agent_message_chunk", t), s));
+  expect(
+    msg(`mango${LT}close|>junk`)
+      .map((e) => e.text)
+      .join(""),
+  ).toBe("mango");
+  expect(msg("still muted")).toEqual([]);
+  const start = mapUpdate({ sessionUpdate: "tool_call", toolCallId: "1", title: "Run", kind: "execute" }, s);
+  expect(start[0]).toMatchObject({ type: "tool-start", callId: "1" });
+  expect(
+    msg("hi again")
+      .map((e) => e.text)
+      .join(""),
+  ).toBe("hi again");
+  expect(
+    msg("end <")
+      .map((e) => e.text)
+      .join(""),
+  ).toBe("end ");
+  const upd = mapUpdate({ sessionUpdate: "tool_call_update", toolCallId: "1", status: "in_progress" }, s);
+  expect(upd[0]).toEqual({ type: "text-delta", text: "<" });
+});
+
+test("a chunk flushes the other stream's held text", () => {
+  const s = newUpdateState();
+  const upd = (u: string, t: string) => mapUpdate(chunkUpd(u, t), s);
+  expect(upd("agent_thought_chunk", "hmm <")).toEqual([{ type: "reasoning-delta", text: "hmm " }]);
+  expect(upd("agent_message_chunk", "ok")).toEqual([
+    { type: "reasoning-delta", text: "<" },
+    { type: "text-delta", text: "ok" },
+  ]);
+  expect(upd("agent_thought_chunk", `r${LT}close|>junk`)).toEqual([{ type: "reasoning-delta", text: "r" }]);
+  expect(upd("agent_thought_chunk", "dropped")).toEqual([]);
 });

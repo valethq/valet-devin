@@ -1,16 +1,26 @@
 import type { AgentEvent, Logger } from "@valethq/sdk";
+import { feed, flush, newTokenFilter, type TokenFilter } from "./control-tokens";
 
 type Obj = Record<string, unknown>;
 
 export interface UpdateState {
   outputs: Map<string, string>;
   calls: Map<string, { title: string; status: "open" | "completed" | "failed"; exitCode?: number }>;
+  text: TokenFilter;
+  thought: TokenFilter;
   contextTokens?: number;
   log?: Logger;
 }
 
 export function newUpdateState(log?: Logger, contextTokens?: number): UpdateState {
-  return { outputs: new Map(), calls: new Map(), log, contextTokens };
+  return {
+    outputs: new Map(),
+    calls: new Map(),
+    text: newTokenFilter(),
+    thought: newTokenFilter(),
+    log,
+    contextTokens,
+  };
 }
 
 function textOf(content: unknown): string {
@@ -62,29 +72,46 @@ function end(callId: string, status: "completed" | "failed", state: UpdateState)
   };
 }
 
+function drained(f: TokenFilter, type: "text-delta" | "reasoning-delta"): AgentEvent[] {
+  const text = flush(f);
+  return text ? [{ type, text }] : [];
+}
+
+// Emit any text held back for token disambiguation, e.g. at turn end.
+export function drainText(state: UpdateState): AgentEvent[] {
+  return [...drained(state.text, "text-delta"), ...drained(state.thought, "reasoning-delta")];
+}
+
 export function mapUpdate(u: Obj, state: UpdateState): AgentEvent[] {
   const callId = String(u.toolCallId ?? "");
+  const leaked = () => state.log?.warn("devin cli leaked control tokens; dropped the rest of the message");
   switch (u.sessionUpdate) {
     case "agent_message_chunk": {
-      const text = chunkText(u);
-      return text ? [{ type: "text-delta", text }] : [];
+      const events = drained(state.thought, "reasoning-delta");
+      const text = feed(state.text, chunkText(u), leaked);
+      if (text) events.push({ type: "text-delta", text });
+      return events;
     }
     case "agent_thought_chunk": {
-      const text = chunkText(u);
-      return text ? [{ type: "reasoning-delta", text }] : [];
+      const events = drained(state.text, "text-delta");
+      const text = feed(state.thought, chunkText(u), leaked);
+      if (text) events.push({ type: "reasoning-delta", text });
+      return events;
     }
     case "tool_call": {
+      const events = drainText(state);
       const title = typeof u.title === "string" ? u.title : undefined;
       const name = typeof u.kind === "string" ? u.kind : (title ?? "tool");
       state.outputs.set(callId, "");
       state.calls.set(callId, { title: title ?? name, status: "open", exitCode: exitCodeOf(u) });
-      const events: AgentEvent[] = [{ type: "tool-start", callId, name, title, input: u.rawInput }];
+      events.push({ type: "tool-start", callId, name, title, input: u.rawInput });
       events.push(...cumulative(callId, textOf(u.content), state));
       if (u.status === "completed" || u.status === "failed") events.push(end(callId, u.status, state));
       return events;
     }
     case "tool_call_update": {
-      const events = cumulative(callId, textOf(u.content), state);
+      const events = drainText(state);
+      events.push(...cumulative(callId, textOf(u.content), state));
       const c = state.calls.get(callId) ?? { title: "tool", status: "open" as const };
       state.calls.set(callId, c);
       if (typeof u.title === "string" && c.status === "open") c.title = u.title;

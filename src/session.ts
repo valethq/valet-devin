@@ -1,7 +1,7 @@
 import type { AgentEvent, AgentSession, Logger, ModelContent } from "@valethq/sdk";
 import type { AcpClient } from "./acp";
 import { optionValues, resolveModel } from "./models";
-import { mapStop, mapUpdate, newUpdateState, type UpdateState } from "./events";
+import { drainText, mapStop, mapUpdate, newUpdateState, type UpdateState } from "./events";
 
 export interface SessionInit {
   client: AcpClient;
@@ -126,9 +126,13 @@ export class DevinSession implements AgentSession {
             outputTokens: usage.outputTokens,
           });
           if (r.stopReason === "cancelled" || signal.aborted) this.interrupted = partialOutput(state);
+          for (const e of drainText(state)) push(e);
           push({ type: "finish", ...mapStop(r.stopReason) });
         },
-        (e: Error) => push({ type: "finish", reason: "error", error: e.message }),
+        (e: Error) => {
+          for (const ev of drainText(state)) push(ev);
+          push({ type: "finish", reason: "error", error: e.message });
+        },
       )
       .finally(() => {
         done = true;
