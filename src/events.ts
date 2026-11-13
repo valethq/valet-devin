@@ -121,6 +121,20 @@ export function mapUpdate(u: Obj, state: UpdateState): AgentEvent[] {
       if (u.status === "completed" || u.status === "failed") events.push(end(callId, u.status, state));
       return events;
     }
+    case "compaction_update": {
+      // ACP session compaction (RFD: session-compaction); in_progress opens the marker, a terminal status closes it
+      const status = u.status;
+      if (status === "in_progress") return [{ type: "compaction-start" }];
+      if (status === "completed" || status === "failed" || status === "cancelled")
+        return [
+          {
+            type: "compaction-end",
+            status,
+            ...(typeof u.error === "string" ? { error: u.error } : {}),
+          },
+        ];
+      return [];
+    }
     case "usage_update": {
       if (typeof u.used !== "number") return [];
       const prev = state.contextTokens;
@@ -128,7 +142,8 @@ export function mapUpdate(u: Obj, state: UpdateState): AgentEvent[] {
       const events: AgentEvent[] = [];
       if (prev !== undefined && u.used < prev * 0.7) {
         state.log?.info("devin cli compacted the context", { from: prev, to: u.used });
-        events.push({ type: "compaction" });
+        // Devin reports no start, so the usage drop opens and closes the marker together
+        events.push({ type: "compaction-start" }, { type: "compaction-end", status: "completed" });
       }
       events.push({ type: "usage", contextTokens: u.used });
       return events;

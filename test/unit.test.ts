@@ -121,6 +121,16 @@ test("tool-end carries terminal exit code", () => {
   expect(none).not.toHaveProperty("exitCode");
 });
 
+test("ACP compaction_update opens on in_progress and closes on a terminal status", () => {
+  const s = newUpdateState({ debug() {}, info() {}, warn() {}, error() {} }, 1000);
+  expect(
+    mapUpdate({ sessionUpdate: "compaction_update", compactionId: "c1", status: "in_progress" }, s),
+  ).toEqual([{ type: "compaction-start" }]);
+  expect(
+    mapUpdate({ sessionUpdate: "compaction_update", compactionId: "c1", status: "failed", error: "boom" }, s),
+  ).toEqual([{ type: "compaction-end", status: "failed", error: "boom" }]);
+});
+
 test("usage drop over 30% surfaces a compaction marker", () => {
   const logs: { level: string; msg: string }[] = [];
   const log = (level: string) => (msg: string) => logs.push({ level, msg });
@@ -132,7 +142,8 @@ test("usage drop over 30% surfaces a compaction marker", () => {
     { type: "usage", contextTokens: 212200 },
   ]);
   expect(mapUpdate({ sessionUpdate: "usage_update", used: 83500 }, s)).toEqual([
-    { type: "compaction" },
+    { type: "compaction-start" },
+    { type: "compaction-end", status: "completed" },
     { type: "usage", contextTokens: 83500 },
   ]);
   expect(logs).toContainEqual({ level: "info", msg: "devin cli compacted the context" });

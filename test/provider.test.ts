@@ -154,9 +154,10 @@ test("compaction surfaces a marker event and info log", async () => {
   const { open, logs } = setup();
   const s = await open();
   const events = await collect(s.prompt(input("compact"), new AbortController().signal));
-  expect(events.slice(0, 3)).toEqual([
+  expect(events.slice(0, 4)).toEqual([
     { type: "usage", contextTokens: 212200 },
-    { type: "compaction" },
+    { type: "compaction-start" },
+    { type: "compaction-end", status: "completed" },
     { type: "usage", contextTokens: 83500 },
   ]);
   expect(logs).toContainEqual({
@@ -241,4 +242,14 @@ test("a reloaded permissionMode applies to the next session; spawn settings need
   await expect(reconfigure({ ...cfg, permissionMode: "plan", denyKinds: ["execute"] })).rejects.toThrow(
     "need a restart",
   );
+});
+
+test("/compact is a turn that reports the compaction start and end", async () => {
+  const { open } = setup();
+  const s = await open();
+  if (!s.compact) throw new Error("devin session should support compact");
+  const events = await collect(s.compact("keep the todo list", new AbortController().signal));
+  expect(events).toContainEqual({ type: "compaction-start" });
+  expect(events).toContainEqual({ type: "compaction-end", status: "completed" });
+  expect(events.at(-1)).toEqual({ type: "finish", reason: "stop" });
 });

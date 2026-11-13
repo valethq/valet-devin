@@ -110,7 +110,6 @@ export class DevinSession implements AgentSession {
     input: { content: ModelContent[]; preamble?: string },
     signal: AbortSignal,
   ): AsyncIterable<AgentEvent> {
-    const { client, id } = this.init;
     let blocks: Block[];
     try {
       await this.ready();
@@ -119,6 +118,25 @@ export class DevinSession implements AgentSession {
       yield { type: "finish", reason: "error", error: (e as Error).message };
       return;
     }
+    yield* this.turn(blocks, signal);
+  }
+
+  /** `/compact` goes through the same session/prompt; Devin reports the compaction in the turn's updates. */
+  async *compact(instructions: string | undefined, signal: AbortSignal): AsyncIterable<AgentEvent> {
+    try {
+      await this.ready();
+    } catch (e) {
+      yield { type: "finish", reason: "error", error: (e as Error).message };
+      return;
+    }
+    yield* this.turn(
+      [{ type: "text", text: instructions ? `/compact ${instructions}` : "/compact" }],
+      signal,
+    );
+  }
+
+  private async *turn(blocks: Block[], signal: AbortSignal): AsyncIterable<AgentEvent> {
+    const { client, id } = this.init;
     const state = newUpdateState(this.init.log, this.lastUsed);
     const queue: AgentEvent[] = [];
     let wake: (() => void) | undefined;
