@@ -25,7 +25,7 @@ function setup(extra = {}, blobs: Record<string, string> = {}) {
       signal: new AbortController().signal,
       ...o,
     });
-  return { ...h, logFile, open };
+  return { ...h, cfg, logFile, open };
 }
 
 test("open, prompt maps events, setModel", async () => {
@@ -234,4 +234,15 @@ test("rpc errors carry data", async () => {
   await expect(
     client.request("session/set_config_option", { sessionId, configId: "model", value: "x" }),
   ).rejects.toThrow("Invalid params: Invalid value 'x' for config option 'model'");
+});
+
+test("a reloaded permissionMode applies to the next session; spawn settings need a restart", async () => {
+  const { cfg, reconfigure, open, logFile } = setup();
+  await reconfigure({ ...cfg, permissionMode: "plan" });
+  await open();
+  const c = calls(logFile);
+  expect(c.find((x) => x.method === "session/set_mode")?.params.modeId).toBe("plan");
+  await expect(reconfigure({ ...cfg, permissionMode: "plan", denyKinds: ["execute"] })).rejects.toThrow(
+    "need a restart",
+  );
 });

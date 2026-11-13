@@ -14,12 +14,14 @@ export function fakeCtx(config: DevinConfig, blobs: Record<string, string> = {})
   const logs: { level: string; msg: string; data?: unknown }[] = [];
   const disposers: (() => void | Promise<void>)[] = [];
   let provided: AgentProvider | undefined;
+  const listeners: ((next: DevinConfig, prev: DevinConfig) => void | Promise<void>)[] = [];
   const logger = (level: string) => (msg: string, data?: Record<string, unknown>) =>
     logs.push({ level, msg, data });
   const ctx = {
     config,
     log: { debug: logger("debug"), info: logger("info"), warn: logger("warn"), error: logger("error") },
     onDispose: (fn: () => void) => disposers.push(fn),
+    onConfigChange: (fn: (typeof listeners)[number]) => listeners.push(fn),
     scopes: {
       define: noop,
       provide: (s: string, impl: AgentProvider) => {
@@ -58,6 +60,11 @@ export function fakeCtx(config: DevinConfig, blobs: Record<string, string> = {})
     state,
     logs,
     kv,
+    reconfigure: async (next: DevinConfig) => {
+      const prev = ctx.config;
+      (ctx as { config: DevinConfig }).config = next;
+      for (const fn of listeners) await fn(next, prev);
+    },
     dispose: async () => {
       for (const d of disposers.reverse()) await d();
     },

@@ -13,6 +13,11 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
 } {
   const cfg = ctx.config ?? {};
   const client = new AcpClient({ command: spawnCommand(cfg), denyKinds: cfg.denyKinds ?? [], log: ctx.log });
+  ctx.onConfigChange((next, prev) => {
+    const spawned = (c: DevinConfig) => JSON.stringify([c.command, c.refusalFallback, c.denyKinds]);
+    if (spawned(next) !== spawned(prev))
+      throw new Error("command, refusalFallback and denyKinds need a restart");
+  });
   const sessions = new Set<DevinSession>();
   const acpModels = async () => {
     const live = [...sessions].map((s) => optionValues(s.options, "model")).find((v) => v.length);
