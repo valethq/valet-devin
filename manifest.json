@@ -6,7 +6,50 @@
   "description": "inference@1 agent provider devin-cli over devin acp.",
   "valet": "^0.1.0",
   "main": "./src/index.ts",
-  "provides": [
-    "inference"
-  ]
+  "provides": ["inference"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "command": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "permissionMode": {
+        "type": "string"
+      },
+      "refusalFallback": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "denyKinds": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "models": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id"],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "contextWindow": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    }
+  }
 }
