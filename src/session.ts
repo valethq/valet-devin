@@ -12,8 +12,11 @@ export interface SessionInit {
   configOptions: unknown;
   reseeded: boolean;
   log: Logger;
+  blobPath(id: string): string;
   onClose(): void;
 }
+
+type Block = { type: "text"; text: string } | { type: "image"; mimeType: string; data: string };
 
 export class DevinSession implements AgentSession {
   readonly reseeded: boolean;
@@ -82,13 +85,36 @@ export class DevinSession implements AgentSession {
     this.init.onClose();
   }
 
+  private async promptBlocks(input: { content: ModelContent[]; preamble?: string }): Promise<Block[]> {
+    const partial = this.interrupted;
+    this.interrupted = "";
+    const head = [partial, ...(input.preamble?.split(/\n(?=## )/) ?? [])];
+    const content = await Promise.all(input.content.map((c) => this.contentBlock(c)));
+    return [
+      ...head.filter((t) => !!t).map((text): Block => ({ type: "text", text })),
+      ...content.filter((b): b is Block => b !== undefined),
+    ];
+  }
+
+  private async contentBlock(c: ModelContent): Promise<Block | undefined> {
+    if (c.type === "text") return { type: "text", text: c.text };
+    if (c.type !== "image") return undefined;
+    if (!this.init.client.imageSupported) {
+      return { type: "text", text: "[image not sent: Devin CLI does not accept images]" };
+    }
+    const bytes = await Bun.file(this.init.blobPath(c.blobId)).bytes();
+    return { type: "image", mimeType: c.mime, data: Buffer.from(bytes).toString("base64") };
+  }
+
   async *prompt(
     input: { content: ModelContent[]; preamble?: string },
     signal: AbortSignal,
   ): AsyncIterable<AgentEvent> {
     const { client, id } = this.init;
+    let blocks: Block[];
     try {
       await this.ready();
+      blocks = await this.promptBlocks(input);
     } catch (e) {
       yield { type: "finish", reason: "error", error: (e as Error).message };
       return;
@@ -106,16 +132,8 @@ export class DevinSession implements AgentSession {
     });
     const cancel = () => client.notify("session/cancel", { sessionId: id });
     signal.addEventListener("abort", cancel);
-    const partial = this.interrupted;
-    this.interrupted = "";
-    const texts = [
-      partial,
-      ...(input.preamble?.split(/\n(?=## )/) ?? []),
-      ...input.content.map((c) => (c.type === "text" ? c.text : undefined)),
-    ];
-    const prompt = texts.filter((t): t is string => !!t).map((text) => ({ type: "text", text }));
     client
-      .request("session/prompt", { sessionId: id, prompt })
+      .request("session/prompt", { sessionId: id, prompt: blocks })
       .then(
         (r) => {
           const usage = (r.usage ?? {}) as Record<string, number>;

@@ -1,4 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { AcpClient } from "../src/acp";
 import { calls, collect, fakeConfig, fakeCtx, input } from "./helpers";
 
@@ -9,9 +12,9 @@ afterAll(async () => {
   for (const d of disposers) await d();
 });
 
-function setup(extra = {}) {
+function setup(extra = {}, blobs: Record<string, string> = {}) {
   const { cfg, logFile } = fakeConfig(extra);
-  const h = fakeCtx(cfg);
+  const h = fakeCtx(cfg, blobs);
   disposers.push(h.dispose);
   const open = (o: { resumeId?: string; model?: string } = {}) =>
     h.provider.open({
@@ -185,6 +188,42 @@ test("preamble file sections are sent as separate blocks", async () => {
     .filter((x) => x.method === "session/prompt")
     .map((x) => (x.params.prompt as { text: string }[]).map((b) => b.text));
   expect(sent.at(-1)).toEqual(["context", "## a.ts\nfoo", "## b.ts\nbar", "go"]);
+});
+
+test("image content is sent as an ACP image block with the blob's bytes", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "blob-"));
+  const path = join(dir, "pic.png");
+  await Bun.write(path, new Uint8Array([1, 2, 3]));
+  const { open, logFile } = setup({}, { blb_1: path });
+  const s = await open();
+  const events = await collect(
+    s.prompt(
+      {
+        content: [
+          { type: "text", text: "see" },
+          { type: "image", mime: "image/png", blobId: "blb_1" },
+        ],
+      },
+      new AbortController().signal,
+    ),
+  );
+  expect(events.at(-1)).toEqual({ type: "finish", reason: "stop" });
+  const sent = calls(logFile).filter((x) => x.method === "session/prompt");
+  expect(sent.at(-1)?.params.prompt).toEqual([
+    { type: "text", text: "see" },
+    { type: "image", mimeType: "image/png", data: "AQID" },
+  ]);
+});
+
+test("an unreadable image fails the prompt instead of dropping it", async () => {
+  const s = await setup().open();
+  const events = await collect(
+    s.prompt(
+      { content: [{ type: "image", mime: "image/png", blobId: "blb_missing" }] },
+      new AbortController().signal,
+    ),
+  );
+  expect(events).toEqual([{ type: "finish", reason: "error", error: 'unknown blob "blb_missing"' }]);
 });
 
 test("rpc errors carry data", async () => {

@@ -54,6 +54,7 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
         mode: cfg.permissionMode ?? "accept-edits",
         reseeded: id !== opts.resumeId && opts.resumeId !== undefined,
         log: ctx.log,
+        blobPath: (blobId) => ctx.store.blobs.path(blobId),
         onClose: () => sessions.delete(devin),
       });
       await devin.configure();

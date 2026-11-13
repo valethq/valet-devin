@@ -8,7 +8,7 @@ import type { DevinConfig } from "../src/config";
 export const FAKE = join(import.meta.dir, "fixtures", "fake-acp.ts");
 const noop = () => {};
 
-export function fakeCtx(config: DevinConfig) {
+export function fakeCtx(config: DevinConfig, blobs: Record<string, string> = {}) {
   const state: Record<string, unknown> = {};
   const logs: { level: string; msg: string; data?: unknown }[] = [];
   const disposers: (() => void | Promise<void>)[] = [];
@@ -33,6 +33,13 @@ export function fakeCtx(config: DevinConfig) {
         },
       },
       projects: { get: () => ({ workspaceDir: "/tmp" }) },
+      blobs: {
+        path: (id: string) => {
+          const p = blobs[id];
+          if (p === undefined) throw new Error(`unknown blob "${id}"`);
+          return p;
+        },
+      },
     },
   } as unknown as PluginContext<DevinConfig>;
   plugin.activate(ctx);

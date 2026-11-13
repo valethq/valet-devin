@@ -26,6 +26,7 @@ export class AcpClient {
   private disposed = false;
   generation = 0;
   loadSupported = false;
+  imageSupported = false;
 
   constructor(private opts: AcpOptions) {}
 
@@ -90,7 +91,9 @@ export class AcpClient {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
     });
-    this.loadSupported = (init.agentCapabilities as Obj | undefined)?.loadSession === true;
+    const caps = init.agentCapabilities as Obj | undefined;
+    this.loadSupported = caps?.loadSession === true;
+    this.imageSupported = (caps?.promptCapabilities as Obj | undefined)?.image === true;
   }
 
   private backoff(uptime: number): void {

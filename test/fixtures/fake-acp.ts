@@ -123,7 +123,10 @@ async function handle(m: Msg) {
   const { id, params } = m;
   switch (m.method) {
     case "initialize":
-      return reply(id, { protocolVersion: 1, agentCapabilities: { loadSession: true } });
+      return reply(id, {
+        protocolVersion: 1,
+        agentCapabilities: { loadSession: true, promptCapabilities: { image: true } },
+      });
     case "session/new":
       return reply(id, {
         sessionId: `fake-${++seq}-${Date.now()}`,
