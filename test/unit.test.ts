@@ -188,6 +188,31 @@ test("modelLister filters to ACP-resolvable ids", async () => {
   expect(await ids(async () => undefined)).toHaveLength(3);
 });
 
+test("modelLister hides fusion and adaptive per current settings", async () => {
+  const out = [
+    "  adaptive  Adaptive  [$1 / 1M Input]",
+    "  swe-2-high  SWE-2 High  [262K context, Free]",
+    "  fusion-a-sidekick-b  Fusion (A + B)  [1M context]",
+    "  fusion-c-sidekick-d  Fusion (C + D)  [1M context]",
+  ].join("\n");
+  let hidden = { fusion: true, adaptive: true };
+  const list = modelLister(
+    {},
+    async () => out,
+    undefined,
+    () => hidden,
+  );
+  expect((await list()).map((m) => m.id)).toEqual(["swe-2-high"]);
+  hidden = { fusion: false, adaptive: true };
+  expect((await list()).map((m) => m.id)).toEqual([
+    "swe-2-high",
+    "fusion-a-sidekick-b",
+    "fusion-c-sidekick-d",
+  ]);
+  hidden = { fusion: true, adaptive: false };
+  expect((await list()).map((m) => m.id)).toEqual(["adaptive", "swe-2-high"]);
+});
+
 test("cumulative tool output", () => {
   const s = newUpdateState();
   const upd = (t: string, status?: string) =>

@@ -3,6 +3,7 @@ import { AcpClient } from "./acp";
 import { type DevinConfig, spawnCommand } from "./config";
 import { modelLister, optionValues } from "./models";
 import { DevinSession } from "./session";
+import { hideAdaptive, hideFusion, permissionMode } from "./settings";
 
 export const PROVIDER_KEY = "devin-cli";
 
@@ -24,7 +25,16 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
     kind: "agent",
     id: PROVIDER_KEY,
     label: "Devin CLI",
-    listModels: modelLister(cfg, undefined, acpModels),
+    listModels: modelLister(
+      {
+        get models() {
+          return ctx.config?.models;
+        },
+      },
+      undefined,
+      acpModels,
+      () => ({ fusion: hideFusion(ctx), adaptive: hideAdaptive(ctx) }),
+    ),
     async open(opts): Promise<AgentSession> {
       const session = ctx.store.sessions.get(opts.sessionId);
       const project = session && ctx.store.projects.get(session.projectId);
@@ -51,7 +61,7 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
         cwd,
         model: opts.model,
         configOptions,
-        mode: cfg.permissionMode ?? "accept-edits",
+        mode: permissionMode(ctx),
         reseeded: id !== opts.resumeId && opts.resumeId !== undefined,
         log: ctx.log,
         blobPath: (blobId) => ctx.store.blobs.path(blobId),

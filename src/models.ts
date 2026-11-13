@@ -71,14 +71,26 @@ export function optionValues(configOptions: unknown, configId: string): string[]
   return flat(opt?.options);
 }
 
+export interface HiddenModels {
+  fusion: boolean;
+  adaptive: boolean;
+}
+
+export function isHidden(id: string, hidden: HiddenModels): boolean {
+  return (hidden.fusion && id.startsWith("fusion-")) || (hidden.adaptive && id === "adaptive");
+}
+
+/** Hidden filter is applied per call, so a settings change shows up without waiting out the cache. */
 export function modelLister(
   cfg: DevinConfig,
   run: () => Promise<string> = runDevinModels,
   acpModels: () => Promise<string[] | undefined> = async () => undefined,
+  hidden: () => HiddenModels = () => ({ fusion: true, adaptive: true }),
 ) {
   let cache: { at: number; models: ModelInfo[] } | undefined;
   return async (): Promise<ModelInfo[]> => {
-    if (cache && Date.now() - cache.at < TTL_MS) return cache.models;
+    const keep = (models: ModelInfo[]) => models.filter((m) => !isHidden(m.id, hidden()));
+    if (cache && Date.now() - cache.at < TTL_MS) return keep(cache.models);
     try {
       let parsed = parseModels(await run());
       if (!parsed.length) throw new Error("no models parsed");
@@ -88,9 +100,9 @@ export function modelLister(
         if (filtered.length) parsed = filtered;
       }
       cache = { at: Date.now(), models: parsed.map(toModelInfo) };
-      return cache.models;
+      return keep(cache.models);
     } catch {
-      return (cfg.models ?? DEFAULT_MODELS.map((id) => ({ id }))).map(toModelInfo);
+      return keep((cfg.models ?? DEFAULT_MODELS.map((id) => ({ id }))).map(toModelInfo));
     }
   };
 }

@@ -4,6 +4,8 @@ export interface DevinConfig {
   refusalFallback?: string[];
   models?: { id: string; name?: string; contextWindow?: number }[];
   denyKinds?: string[];
+  hideFusion?: boolean;
+  hideAdaptive?: boolean;
 }
 
 export const DEFAULT_MODELS = [

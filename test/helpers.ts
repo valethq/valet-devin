@@ -10,6 +10,7 @@ const noop = () => {};
 
 export function fakeCtx(config: DevinConfig, blobs: Record<string, string> = {}) {
   const state: Record<string, unknown> = {};
+  const kv = new Map<string, unknown>();
   const logs: { level: string; msg: string; data?: unknown }[] = [];
   const disposers: (() => void | Promise<void>)[] = [];
   let provided: AgentProvider | undefined;
@@ -20,9 +21,18 @@ export function fakeCtx(config: DevinConfig, blobs: Record<string, string> = {})
     log: { debug: logger("debug"), info: logger("info"), warn: logger("warn"), error: logger("error") },
     onDispose: (fn: () => void) => disposers.push(fn),
     scopes: {
-      provide: (_s: string, impl: AgentProvider) => {
-        provided = impl;
+      define: noop,
+      provide: (s: string, impl: AgentProvider) => {
+        if (s === "inference") provided = impl;
         return { dispose: noop };
+      },
+    },
+    storage: {
+      kv: {
+        get: <T>(k: string) => kv.get(k) as T | undefined,
+        set: (k: string, v: unknown) => void kv.set(k, v),
+        delete: (k: string) => void kv.delete(k),
+        list: () => [...kv.keys()],
       },
     },
     store: {
@@ -47,6 +57,7 @@ export function fakeCtx(config: DevinConfig, blobs: Record<string, string> = {})
     provider: provided as AgentProvider,
     state,
     logs,
+    kv,
     dispose: async () => {
       for (const d of disposers.reverse()) await d();
     },

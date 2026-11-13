@@ -6,7 +6,7 @@
   "description": "inference@1 agent provider devin-cli over devin acp.",
   "valet": "^0.1.0",
   "main": "./src/index.ts",
-  "provides": ["inference@1"],
+  "provides": ["inference@1", "settings@1"],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -31,6 +31,12 @@
         "items": {
           "type": "string"
         }
+      },
+      "hideFusion": {
+        "type": "boolean"
+      },
+      "hideAdaptive": {
+        "type": "boolean"
       },
       "models": {
         "type": "array",
