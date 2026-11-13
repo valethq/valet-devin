@@ -16,10 +16,24 @@ or switch models in a session with \`/model <name>\`.
 
 test("parseModels", () => {
   expect(parseModels(SAMPLE)).toEqual([
-    { id: "adaptive", name: "Adaptive", contextWindow: 200000 },
+    { id: "adaptive", name: "Adaptive", contextWindow: 1000000 },
     { id: "swe-2-high", name: "SWE-2 High", contextWindow: 262000 },
     { id: "gemini-x", name: "Gemini X", contextWindow: 1000000 },
   ]);
+});
+
+test("parseModels fills unknown windows from non-fusion max", () => {
+  const out = [
+    "  adaptive  Adaptive  [$1 / 1M Input]",
+    "  swe-2-high  SWE-2 High  [262K context, Free]",
+    "  fusion-x-sidekick-y  Fusion (X + Y)  [9M context]",
+  ].join("\n");
+  expect(parseModels(out)).toEqual([
+    { id: "adaptive", name: "Adaptive", contextWindow: 262000 },
+    { id: "swe-2-high", name: "SWE-2 High", contextWindow: 262000 },
+    { id: "fusion-x-sidekick-y", name: "Fusion (X + Y)", contextWindow: 9000000 },
+  ]);
+  expect(parseModels("  lone  Lone  [$1]")[0]?.contextWindow).toBe(200000);
 });
 
 test("modelLister caches and falls back", async () => {
@@ -77,6 +91,45 @@ test("mapUpdate", () => {
   ]);
   expect(s.contextTokens).toBe(7);
   expect(mapUpdate({ sessionUpdate: "session_info_update", title: "t" }, s)).toEqual([]);
+});
+
+test("usage drop over 30% surfaces a compaction notice", () => {
+  const logs: { level: string; msg: string }[] = [];
+  const log = (level: string) => (msg: string) => logs.push({ level, msg });
+  const s = newUpdateState(
+    { debug: log("debug"), info: log("info"), warn: log("warn"), error: log("error") },
+    1000,
+  );
+  expect(mapUpdate({ sessionUpdate: "usage_update", used: 212200 }, s)).toEqual([
+    { type: "usage", contextTokens: 212200 },
+  ]);
+  expect(mapUpdate({ sessionUpdate: "usage_update", used: 83500 }, s)).toEqual([
+    {
+      type: "reasoning-delta",
+      text: "[Devin CLI compacted the context: 212.2k → 83.5k tokens]",
+    },
+    { type: "usage", contextTokens: 83500 },
+  ]);
+  expect(logs).toContainEqual({ level: "info", msg: "devin cli compacted the context" });
+  expect(mapUpdate({ sessionUpdate: "usage_update", used: 60000 }, s)).toEqual([
+    { type: "usage", contextTokens: 60000 },
+  ]);
+});
+
+test("update titles log at debug only", () => {
+  const logs: { level: string; msg: string; data?: unknown }[] = [];
+  const log = (level: string) => (msg: string, data?: Record<string, unknown>) =>
+    logs.push({ level, msg, data });
+  const s = newUpdateState({
+    debug: log("debug"),
+    info: log("info"),
+    warn: log("warn"),
+    error: log("error"),
+  });
+  expect(mapUpdate({ sessionUpdate: "session_info_update", title: "hello" }, s)).toEqual([]);
+  expect(logs).toEqual([
+    { level: "debug", msg: "acp update title", data: { update: "session_info_update", title: "hello" } },
+  ]);
 });
 
 test("mapStop", () => {

@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentSession, ModelContent } from "@valethq/sdk";
+import type { AgentEvent, AgentSession, Logger, ModelContent } from "@valethq/sdk";
 import type { AcpClient } from "./acp";
 import { optionValues, resolveModel } from "./models";
 import { mapStop, mapUpdate, newUpdateState, type UpdateState } from "./events";
@@ -11,6 +11,7 @@ export interface SessionInit {
   mode: string;
   configOptions: unknown;
   reseeded: boolean;
+  log: Logger;
   onClose(): void;
 }
 
@@ -18,6 +19,7 @@ export class DevinSession implements AgentSession {
   readonly reseeded: boolean;
   private generation: number;
   private interrupted = "";
+  private lastUsed?: number;
 
   constructor(private init: SessionInit) {
     this.reseeded = init.reseeded;
@@ -91,7 +93,7 @@ export class DevinSession implements AgentSession {
       yield { type: "finish", reason: "error", error: (e as Error).message };
       return;
     }
-    const state = newUpdateState();
+    const state = newUpdateState(this.init.log, this.lastUsed);
     const queue: AgentEvent[] = [];
     let wake: (() => void) | undefined;
     let done = false;
@@ -108,7 +110,7 @@ export class DevinSession implements AgentSession {
     this.interrupted = "";
     const texts = [
       partial,
-      input.preamble,
+      ...(input.preamble?.split(/\n(?=## )/) ?? []),
       ...input.content.map((c) => (c.type === "text" ? c.text : undefined)),
     ];
     const prompt = texts.filter((t): t is string => !!t).map((text) => ({ type: "text", text }));
@@ -141,6 +143,7 @@ export class DevinSession implements AgentSession {
         else await new Promise<void>((r) => (wake = r));
       }
     } finally {
+      this.lastUsed = state.contextTokens;
       signal.removeEventListener("abort", cancel);
       client.unlisten(id);
     }

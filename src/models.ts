@@ -18,17 +18,21 @@ export function toModelInfo(m: { id: string; name?: string; contextWindow?: numb
 }
 
 export function parseModels(output: string): { id: string; name: string; contextWindow: number }[] {
-  const models: { id: string; name: string; contextWindow: number }[] = [];
+  const models: { id: string; name: string; contextWindow?: number }[] = [];
   for (const line of output.split("\n")) {
     const m = LINE.exec(line);
     if (!m) continue;
     const ctx = CONTEXT.exec(m[3] ?? "");
     const contextWindow = ctx
       ? Math.round(Number(ctx[1]) * (ctx[2]?.toUpperCase() === "M" ? 1e6 : 1e3))
-      : DEFAULT_WINDOW;
+      : undefined;
     models.push({ id: m[1] as string, name: m[2] as string, contextWindow });
   }
-  return models;
+  const known = models
+    .filter((m) => m.contextWindow !== undefined && !m.id.startsWith("fusion-"))
+    .map((m) => m.contextWindow as number);
+  const fallback = Math.max(0, ...known) || DEFAULT_WINDOW;
+  return models.map((m) => ({ ...m, contextWindow: m.contextWindow ?? fallback }));
 }
 
 const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];

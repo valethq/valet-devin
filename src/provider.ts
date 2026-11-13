@@ -53,6 +53,7 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
         configOptions,
         mode: cfg.permissionMode ?? "accept-edits",
         reseeded: id !== opts.resumeId && opts.resumeId !== undefined,
+        log: ctx.log,
         onClose: () => sessions.delete(devin),
       });
       await devin.configure();

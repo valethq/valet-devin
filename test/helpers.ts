@@ -10,11 +10,14 @@ const noop = () => {};
 
 export function fakeCtx(config: DevinConfig) {
   const state: Record<string, unknown> = {};
+  const logs: { level: string; msg: string; data?: unknown }[] = [];
   const disposers: (() => void | Promise<void>)[] = [];
   let provided: AgentProvider | undefined;
+  const logger = (level: string) => (msg: string, data?: Record<string, unknown>) =>
+    logs.push({ level, msg, data });
   const ctx = {
     config,
-    log: { debug: noop, info: noop, warn: noop, error: noop },
+    log: { debug: logger("debug"), info: logger("info"), warn: logger("warn"), error: logger("error") },
     onDispose: (fn: () => void) => disposers.push(fn),
     scopes: {
       provide: (_s: string, impl: AgentProvider) => {
@@ -36,6 +39,7 @@ export function fakeCtx(config: DevinConfig) {
   return {
     provider: provided as AgentProvider,
     state,
+    logs,
     dispose: async () => {
       for (const d of disposers.reverse()) await d();
     },

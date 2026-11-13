@@ -123,6 +123,45 @@ test("stop carries partial tool output into the next prompt", async () => {
   expect(sent[2]).toEqual(["ping"]);
 });
 
+test("compaction surfaces a visible notice and info log", async () => {
+  const { open, logs } = setup();
+  const s = await open();
+  const events = await collect(s.prompt(input("compact"), new AbortController().signal));
+  expect(events.slice(0, 3)).toEqual([
+    { type: "usage", contextTokens: 212200 },
+    {
+      type: "reasoning-delta",
+      text: "[Devin CLI compacted the context: 212.2k → 83.5k tokens]",
+    },
+    { type: "usage", contextTokens: 83500 },
+  ]);
+  expect(logs).toContainEqual({
+    level: "info",
+    msg: "devin cli compacted the context",
+    data: { from: 212200, to: 83500 },
+  });
+  expect(logs).toContainEqual({
+    level: "debug",
+    msg: "acp update title",
+    data: { update: "session_info_update", title: "fake session" },
+  });
+});
+
+test("preamble file sections are sent as separate blocks", async () => {
+  const { open, logFile } = setup();
+  const s = await open();
+  await collect(
+    s.prompt(
+      { ...input("go"), preamble: "context\n## a.ts\nfoo\n## b.ts\nbar" },
+      new AbortController().signal,
+    ),
+  );
+  const sent = calls(logFile)
+    .filter((x) => x.method === "session/prompt")
+    .map((x) => (x.params.prompt as { text: string }[]).map((b) => b.text));
+  expect(sent.at(-1)).toEqual(["context", "## a.ts\nfoo", "## b.ts\nbar", "go"]);
+});
+
 test("rpc errors carry data", async () => {
   const { cfg } = fakeConfig();
   const client = new AcpClient({ command: cfg.command as string[], denyKinds: [], log: fakeCtxLog });

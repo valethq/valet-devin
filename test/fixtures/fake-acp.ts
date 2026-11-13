@@ -71,6 +71,13 @@ async function prompt(id: unknown, p: Msg) {
     text(sid, "agent_message_chunk", `permission:${res.result.outcome.optionId}`);
     return reply(id, { stopReason: "end_turn", usage });
   }
+  if (input.includes("compact")) {
+    update(sid, { sessionUpdate: "session_info_update", title: "fake session" });
+    update(sid, { sessionUpdate: "usage_update", used: 212200, size: 262000 });
+    update(sid, { sessionUpdate: "usage_update", used: 83500, size: 262000 });
+    text(sid, "agent_message_chunk", "ok");
+    return reply(id, { stopReason: "end_turn", usage });
+  }
   update(sid, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "thinking" } });
   update(sid, {
     sessionUpdate: "tool_call",

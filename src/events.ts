@@ -1,4 +1,4 @@
-import type { AgentEvent } from "@valethq/sdk";
+import type { AgentEvent, Logger } from "@valethq/sdk";
 
 type Obj = Record<string, unknown>;
 
@@ -6,10 +6,11 @@ export interface UpdateState {
   outputs: Map<string, string>;
   open: Map<string, string>;
   contextTokens?: number;
+  log?: Logger;
 }
 
-export function newUpdateState(): UpdateState {
-  return { outputs: new Map(), open: new Map() };
+export function newUpdateState(log?: Logger, contextTokens?: number): UpdateState {
+  return { outputs: new Map(), open: new Map(), log, contextTokens };
 }
 
 function textOf(content: unknown): string {
@@ -73,14 +74,28 @@ export function mapUpdate(u: Obj, state: UpdateState): AgentEvent[] {
       if (u.status === "completed" || u.status === "failed") events.push(end(callId, u.status, state));
       return events;
     }
-    case "usage_update":
+    case "usage_update": {
       if (typeof u.used !== "number") return [];
+      const prev = state.contextTokens;
       state.contextTokens = u.used;
-      return [{ type: "usage", contextTokens: u.used }];
+      const events: AgentEvent[] = [];
+      if (prev !== undefined && u.used < prev * 0.7) {
+        // spec-gap: AgentEvent has no notice/warning type; surface as reasoning-delta
+        const text = `[Devin CLI compacted the context: ${k(prev)} → ${k(u.used)} tokens]`;
+        state.log?.info("devin cli compacted the context", { from: prev, to: u.used });
+        events.push({ type: "reasoning-delta", text });
+      }
+      events.push({ type: "usage", contextTokens: u.used });
+      return events;
+    }
     default:
+      if (typeof u.title === "string")
+        state.log?.debug("acp update title", { update: u.sessionUpdate, title: u.title });
       return [];
   }
 }
+
+const k = (n: number) => `${(n / 1000).toFixed(1)}k`;
 
 export function mapStop(reason: unknown): {
   reason: "stop" | "cancelled" | "length" | "error";
