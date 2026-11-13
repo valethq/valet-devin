@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "id": "valet-devin",
+  "name": "valet-devin",
+  "version": "0.1.0",
+  "description": "inference@1 agent provider devin-cli over devin acp.",
+  "valet": "^0.1.0",
+  "main": "./src/index.ts",
+  "provides": [
+    "inference"
+  ]
+}
