@@ -93,6 +93,34 @@ test("mapUpdate", () => {
   expect(mapUpdate({ sessionUpdate: "session_info_update", title: "t" }, s)).toEqual([]);
 });
 
+test("tool-end carries terminal exit code", () => {
+  const run = (exit_code?: number) => {
+    const s = newUpdateState();
+    mapUpdate({ sessionUpdate: "tool_call", toolCallId: "1", title: "Ran sh", kind: "execute" }, s);
+    mapUpdate(
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1",
+        status: "in_progress",
+        content: [{ type: "content", content: { type: "text", text: "hi" } }],
+        _meta: {
+          "cognition.ai/inferenceToolName": "exec",
+          ...(exit_code === undefined
+            ? {}
+            : { terminal_exit: { terminal_id: "t0", exit_code, signal: null } }),
+        },
+      },
+      s,
+    );
+    return mapUpdate({ sessionUpdate: "tool_call_update", toolCallId: "1", status: "completed" }, s).at(-1);
+  };
+  expect(run(3)).toEqual({ type: "tool-end", callId: "1", status: "done", output: "hi", exitCode: 3 });
+  expect(run(0)).toEqual({ type: "tool-end", callId: "1", status: "done", output: "hi", exitCode: 0 });
+  const none = run();
+  expect(none).toEqual({ type: "tool-end", callId: "1", status: "done", output: "hi" });
+  expect(none).not.toHaveProperty("exitCode");
+});
+
 test("usage drop over 30% surfaces a compaction notice", () => {
   const logs: { level: string; msg: string }[] = [];
   const log = (level: string) => (msg: string) => logs.push({ level, msg });
@@ -105,8 +133,9 @@ test("usage drop over 30% surfaces a compaction notice", () => {
   ]);
   expect(mapUpdate({ sessionUpdate: "usage_update", used: 83500 }, s)).toEqual([
     {
-      type: "reasoning-delta",
-      text: "[Devin CLI compacted the context: 212.2k → 83.5k tokens]",
+      type: "notice",
+      level: "info",
+      text: "Context compacted by Devin CLI: 212.2k → 83.5k tokens",
     },
     { type: "usage", contextTokens: 83500 },
   ]);

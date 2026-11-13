@@ -100,12 +100,18 @@ async function prompt(id: unknown, p: Msg) {
     rawInput: { cmd: "ls" },
   });
   update(sid, { sessionUpdate: "tool_call_update", toolCallId: "c1", status: "in_progress" });
+  // live devin acp: output and terminal_exit ride on in_progress; completed is bare
   update(sid, {
     sessionUpdate: "tool_call_update",
     toolCallId: "c1",
-    status: "completed",
+    status: "in_progress",
     content: [{ type: "content", content: { type: "text", text: "files" } }],
+    _meta: {
+      "cognition.ai/inferenceToolName": "exec",
+      terminal_exit: { terminal_id: "t0", exit_code: 0, signal: null },
+    },
   });
+  update(sid, { sessionUpdate: "tool_call_update", toolCallId: "c1", status: "completed" });
   update(sid, { sessionUpdate: "usage_update", used: 1234, size: 200000 });
   text(sid, "agent_message_chunk", input.includes("ping") ? "pong" : "ok");
   reply(id, { stopReason: "end_turn", usage });

@@ -4,7 +4,7 @@ type Obj = Record<string, unknown>;
 
 export interface UpdateState {
   outputs: Map<string, string>;
-  calls: Map<string, { title: string; status: "open" | "completed" | "failed" }>;
+  calls: Map<string, { title: string; status: "open" | "completed" | "failed"; exitCode?: number }>;
   contextTokens?: number;
   log?: Logger;
 }
@@ -21,6 +21,20 @@ function textOf(content: unknown): string {
       return inner?.type === "text" && typeof inner.text === "string" ? inner.text : "";
     })
     .join("");
+}
+
+// Observed live: devin acp reports the exit code on a tool_call_update while the
+// call is still "in_progress", one update before the final completed/failed one:
+//   {"sessionUpdate":"tool_call_update","toolCallId":"call_RjRV...","status":"in_progress",
+//    "content":[{"type":"content","content":{"type":"text","text":"hi"}}],
+//    "_meta":{"cognition.ai/inferenceToolName":"exec",
+//             "terminal_exit":{"terminal_id":"e3f9c9","exit_code":3,"signal":null}}}
+// The closing update itself has no payload:
+//   {"sessionUpdate":"tool_call_update","toolCallId":"call_RjRV...","status":"completed",
+//    "_meta":{"cognition.ai/inferenceToolName":"exec"}}
+function exitCodeOf(u: Obj): number | undefined {
+  const t = ((u._meta ?? {}) as Obj).terminal_exit as Obj | undefined;
+  return typeof t?.exit_code === "number" ? t.exit_code : undefined;
 }
 
 function chunkText(u: Obj): string {
@@ -44,6 +58,7 @@ function end(callId: string, status: "completed" | "failed", state: UpdateState)
     callId,
     status: status === "completed" ? "done" : "error",
     output: state.outputs.get(callId),
+    ...(c?.exitCode === undefined ? {} : { exitCode: c.exitCode }),
   };
 }
 
@@ -62,7 +77,7 @@ export function mapUpdate(u: Obj, state: UpdateState): AgentEvent[] {
       const title = typeof u.title === "string" ? u.title : undefined;
       const name = typeof u.kind === "string" ? u.kind : (title ?? "tool");
       state.outputs.set(callId, "");
-      state.calls.set(callId, { title: title ?? name, status: "open" });
+      state.calls.set(callId, { title: title ?? name, status: "open", exitCode: exitCodeOf(u) });
       const events: AgentEvent[] = [{ type: "tool-start", callId, name, title, input: u.rawInput }];
       events.push(...cumulative(callId, textOf(u.content), state));
       if (u.status === "completed" || u.status === "failed") events.push(end(callId, u.status, state));
@@ -73,6 +88,8 @@ export function mapUpdate(u: Obj, state: UpdateState): AgentEvent[] {
       const c = state.calls.get(callId) ?? { title: "tool", status: "open" as const };
       state.calls.set(callId, c);
       if (typeof u.title === "string" && c.status === "open") c.title = u.title;
+      const exitCode = exitCodeOf(u);
+      if (exitCode !== undefined) c.exitCode = exitCode;
       if (u.status === "in_progress") events.push({ type: "tool-update", callId, status: "running" });
       if (u.status === "completed" || u.status === "failed") events.push(end(callId, u.status, state));
       return events;
@@ -83,10 +100,12 @@ export function mapUpdate(u: Obj, state: UpdateState): AgentEvent[] {
       state.contextTokens = u.used;
       const events: AgentEvent[] = [];
       if (prev !== undefined && u.used < prev * 0.7) {
-        // spec-gap: AgentEvent has no notice/warning type; surface as reasoning-delta
-        const text = `[Devin CLI compacted the context: ${k(prev)} → ${k(u.used)} tokens]`;
         state.log?.info("devin cli compacted the context", { from: prev, to: u.used });
-        events.push({ type: "reasoning-delta", text });
+        events.push({
+          type: "notice",
+          level: "info",
+          text: `Context compacted by Devin CLI: ${k(prev)} → ${k(u.used)} tokens`,
+        });
       }
       events.push({ type: "usage", contextTokens: u.used });
       return events;

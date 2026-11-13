@@ -35,12 +35,14 @@ test("open, prompt maps events, setModel", async () => {
     "tool-start",
     "tool-update",
     "tool-update",
+    "tool-update",
     "tool-end",
     "usage",
     "text-delta",
     "usage",
     "finish",
   ]);
+  expect(events.find((e) => e.type === "tool-end")).toMatchObject({ callId: "c1", exitCode: 0 });
   expect(events.at(-2)).toEqual({ type: "usage", contextTokens: 1234, inputTokens: 10, outputTokens: 5 });
   expect(events.at(-1)).toEqual({ type: "finish", reason: "stop" });
   await s.setModel?.("gpt-x-high-fast");
@@ -152,8 +154,9 @@ test("compaction surfaces a visible notice and info log", async () => {
   expect(events.slice(0, 3)).toEqual([
     { type: "usage", contextTokens: 212200 },
     {
-      type: "reasoning-delta",
-      text: "[Devin CLI compacted the context: 212.2k → 83.5k tokens]",
+      type: "notice",
+      level: "info",
+      text: "Context compacted by Devin CLI: 212.2k → 83.5k tokens",
     },
     { type: "usage", contextTokens: 83500 },
   ]);
