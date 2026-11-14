@@ -6,6 +6,7 @@ import {
   hideFusion,
   permissionMode,
   registerSettings,
+  utilityModel,
   type SettingsPanel,
 } from "../src/settings";
 import type { DevinConfig } from "../src/config";
@@ -68,6 +69,7 @@ test("hideFusion and hideAdaptive default on, follow config, and can be flipped 
   const panel = panels[0];
   expect(await panel?.impl.get()).toEqual({
     permissionMode: "accept-edits",
+    utilityModel: "claude-haiku-5-5-low",
     hideFusion: true,
     hideAdaptive: true,
   });
@@ -75,4 +77,15 @@ test("hideFusion and hideAdaptive default on, follow config, and can be flipped 
   expect(hideFusion(ctx)).toBe(false);
   expect(hideAdaptive(ctx)).toBe(true);
   expect(() => panel?.impl.set({ hideAdaptive: "yes" })).toThrow("hideAdaptive must be a boolean");
+});
+
+test("utilityModel prefers the panel, then config; empty turns it off", async () => {
+  const { ctx, panels } = kvCtx({ utilityModel: "swe-2-flash-medium" });
+  expect(utilityModel(ctx)).toBe("swe-2-flash-medium");
+  registerSettings(ctx);
+  await panels[0]?.impl.set({ utilityModel: "claude-haiku-5-5-low" });
+  expect(utilityModel(ctx)).toBe("claude-haiku-5-5-low");
+  await panels[0]?.impl.set({ utilityModel: "" });
+  expect(utilityModel(ctx)).toBeUndefined();
+  expect(() => panels[0]?.impl.set({ utilityModel: 3 })).toThrow("utilityModel must be a string");
 });

@@ -4,6 +4,7 @@ import { type DevinConfig, spawnCommand } from "./config";
 import { modelLister, optionValues } from "./models";
 import { DevinSession } from "./session";
 import { hideAdaptive, hideFusion, permissionMode } from "./settings";
+import { createUtility } from "./utility";
 
 export const PROVIDER_KEY = "devin-cli";
 
@@ -40,6 +41,7 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
       acpModels,
       () => ({ fusion: hideFusion(ctx), adaptive: hideAdaptive(ctx) }),
     ),
+    utility: createUtility(ctx, client),
     async open(opts): Promise<AgentSession> {
       const session = ctx.store.sessions.get(opts.sessionId);
       const project = session && ctx.store.projects.get(session.projectId);

@@ -1,5 +1,5 @@
 import type { PluginContext } from "@valethq/sdk";
-import type { DevinConfig } from "./config";
+import { DEFAULT_UTILITY_MODEL, type DevinConfig } from "./config";
 
 export interface SettingsPanel {
   title: string;
@@ -35,6 +35,12 @@ function flag(ctx: PluginContext<DevinConfig>, key: Flag): boolean {
 export const hideFusion = (ctx: PluginContext<DevinConfig>): boolean => flag(ctx, "hideFusion");
 export const hideAdaptive = (ctx: PluginContext<DevinConfig>): boolean => flag(ctx, "hideAdaptive");
 
+/** The Utility model. Panel value wins over config.json; an empty string turns it off. */
+export function utilityModel(ctx: PluginContext<DevinConfig>): string | undefined {
+  const v = ctx.storage.kv.get<string>("utilityModel") ?? ctx.config?.utilityModel ?? DEFAULT_UTILITY_MODEL;
+  return v.trim() === "" ? undefined : v.trim();
+}
+
 export function registerSettings(ctx: PluginContext<DevinConfig>): void {
   ctx.scopes.define({ name: "settings", version: 1, cardinality: "many" });
   ctx.scopes.provide(
@@ -50,6 +56,7 @@ export function registerSettings(ctx: PluginContext<DevinConfig>): void {
             title: "Permission mode",
             description: "Sent as modeId to session/set_mode when a session opens.",
             enum: MODES,
+            enumNames: ["Normal", "Accept edits", "Smart", "Plan", "Bypass permissions"],
           },
           hideFusion: {
             type: "boolean",
@@ -61,10 +68,16 @@ export function registerSettings(ctx: PluginContext<DevinConfig>): void {
             title: "Hide Adaptive",
             description: "Hides the adaptive model from the model list.",
           },
+          utilityModel: {
+            type: "string",
+            title: "Utility model",
+            description: "Model for small side jobs such as naming sessions. Empty turns them off.",
+          },
         },
       },
       get: () => ({
         permissionMode: permissionMode(ctx),
+        utilityModel: utilityModel(ctx) ?? "",
         hideFusion: hideFusion(ctx),
         hideAdaptive: hideAdaptive(ctx),
       }),
@@ -76,7 +89,10 @@ export function registerSettings(ctx: PluginContext<DevinConfig>): void {
           if (v[key] !== undefined && typeof v[key] !== "boolean")
             throw new Error(`${key} must be a boolean`);
         }
+        if (v.utilityModel !== undefined && typeof v.utilityModel !== "string")
+          throw new Error("utilityModel must be a string");
         if (mode !== undefined) ctx.storage.kv.set("permissionMode", mode);
+        if (typeof v.utilityModel === "string") ctx.storage.kv.set("utilityModel", v.utilityModel);
         for (const key of ["hideFusion", "hideAdaptive"] as const) {
           const value = v[key];
           if (typeof value === "boolean") ctx.storage.kv.set(key, value);

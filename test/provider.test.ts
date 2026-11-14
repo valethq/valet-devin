@@ -253,3 +253,34 @@ test("/compact is a turn that reports the compaction start and end", async () =>
   expect(events).toContainEqual({ type: "compaction-end", status: "completed" });
   expect(events.at(-1)).toEqual({ type: "finish", reason: "stop" });
 });
+
+test("utility completes in a throwaway plan-mode session on the Utility model", async () => {
+  const { provider, logFile } = setup({ utilityModel: "swe-2-high" });
+  expect(provider.utility?.model()).toBe("swe-2-high");
+  const out = await provider.utility?.complete(
+    { system: "Say pong.", prompt: "ping" },
+    new AbortController().signal,
+  );
+  expect(out).toBe("pong");
+  const c = calls(logFile);
+  expect(c.find((x) => x.method === "session/set_mode")?.params.modeId).toBe("plan");
+  const sent = c.find((x) => x.method === "session/prompt")?.params.prompt as { text: string }[];
+  expect(sent[0]?.text).toContain("Say pong.");
+  expect(sent[0]?.text).toContain("ping");
+});
+
+test("utility is off for an empty model and defaults to Haiku", async () => {
+  const off = setup({ utilityModel: "" }).provider.utility;
+  expect(off?.model()).toBeUndefined();
+  await expect(off?.complete({ system: "s", prompt: "p" }, new AbortController().signal)).rejects.toThrow(
+    "no utility model",
+  );
+  expect(setup().provider.utility?.model()).toBe("claude-haiku-5-5-low");
+});
+
+test("utility rejects when the model is unavailable", async () => {
+  const { provider } = setup({ utilityModel: "nope" });
+  await expect(
+    provider.utility?.complete({ system: "s", prompt: "p" }, new AbortController().signal),
+  ).rejects.toThrow('model "nope" is not available');
+});

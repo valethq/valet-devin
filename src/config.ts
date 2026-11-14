@@ -6,7 +6,11 @@ export interface DevinConfig {
   denyKinds?: string[];
   hideFusion?: boolean;
   hideAdaptive?: boolean;
+  /** Model for small side jobs such as session naming. Empty string turns them off. */
+  utilityModel?: string;
 }
+
+export const DEFAULT_UTILITY_MODEL = "claude-haiku-5-5-low";
 
 export const DEFAULT_MODELS = [
   "claude-opus-5-5-medium",
