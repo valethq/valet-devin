@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AcpClient } from "../src/acp";
-import { calls, collect, fakeConfig, fakeCtx, input } from "./helpers";
+import { calls, collect, fakeConfig, fakeCtx, input, noTools } from "./helpers";
 
 const noop = () => {};
 const fakeCtxLog = { debug: noop, info: noop, warn: noop, error: noop };
@@ -21,7 +21,7 @@ function setup(extra = {}, blobs: Record<string, string> = {}) {
       sessionId: "s1",
       cwd: "/x",
       model: "",
-      mcpServers: [],
+      tools: noTools,
       signal: new AbortController().signal,
       ...o,
     });
@@ -51,7 +51,10 @@ test("open, prompt maps events, setModel", async () => {
   await s.setModel?.("gpt-x-high-fast");
   await expect(s.setModel?.("nope")).rejects.toThrow('model "nope" is not available in devin acp');
   const c = calls(logFile);
-  expect(c.find((x) => x.method === "session/new")?.params).toEqual({ cwd: "/tmp", mcpServers: [] });
+  expect(c.find((x) => x.method === "session/new")?.params).toEqual({
+    cwd: "/tmp",
+    mcpServers: [expect.objectContaining({ type: "http", name: "valet" })],
+  });
   expect(c.find((x) => x.method === "session/set_mode")?.params.modeId).toBe("accept-edits");
   expect(c.filter((x) => x.method === "session/set_config_option").map((x) => x.params.value)).toEqual([
     "swe-2-high",

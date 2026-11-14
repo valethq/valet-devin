@@ -10,7 +10,11 @@ test.skipIf(process.env.VALET_LIVE_DEVIN !== "1")(
         sessionId: "s1",
         cwd: process.cwd(),
         model: "swe-2-high",
-        mcpServers: [],
+        tools: {
+          list: () => [],
+          call: async () => ({ content: [] }),
+          authorize: async (_n, input) => ({ input }),
+        },
         signal: new AbortController().signal,
       });
       const events = await collect(s.prompt(input("reply with the word pong"), new AbortController().signal));

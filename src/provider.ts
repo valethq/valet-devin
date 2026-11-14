@@ -1,4 +1,10 @@
-import type { AgentProvider, AgentSession, PluginContext } from "@valethq/sdk";
+import {
+  type AgentProvider,
+  type AgentSession,
+  type McpServerEntry,
+  type PluginContext,
+  toolEndpoint,
+} from "@valethq/sdk";
 import { AcpClient } from "./acp";
 import { type DevinConfig, spawnCommand } from "./config";
 import { modelLister, optionValues } from "./models";
@@ -7,6 +13,14 @@ import { hideAdaptive, hideFusion, permissionMode } from "./settings";
 import { createUtility } from "./utility";
 
 export const PROVIDER_KEY = "devin-cli";
+
+/** ACP's shape for an HTTP MCP server (`mcpCapabilities.http` on initialize). */
+export const acpMcpServer = (e: McpServerEntry): Record<string, unknown> => ({
+  type: "http",
+  name: e.name,
+  url: e.url,
+  headers: Object.entries(e.headers).map(([name, value]) => ({ name, value })),
+});
 
 export function createProvider(ctx: PluginContext<DevinConfig>): {
   provider: AgentProvider;
@@ -20,6 +34,11 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
       throw new Error("command, refusalFallback and denyKinds need a restart");
   });
   const sessions = new Set<DevinSession>();
+  const tools = toolEndpoint(ctx.http, {
+    serverName: "valet",
+    version: ctx.plugin.version,
+    readBlob: (blobId) => Bun.file(ctx.store.blobs.path(blobId)).bytes(),
+  });
   const acpModels = async () => {
     const live = [...sessions].map((s) => optionValues(s.options, "model")).find((v) => v.length);
     if (live) return live;
@@ -47,18 +66,19 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
       const project = session && ctx.store.projects.get(session.projectId);
       const cwd = project?.workspaceDir ?? opts.cwd;
       await client.ensure();
+      const mcpServers = [acpMcpServer(tools.expose(opts.sessionId, opts.tools))];
       let id: string | undefined;
       let configOptions: unknown;
       if (opts.resumeId && client.loadSupported) {
         try {
-          configOptions = (await client.loadSession(opts.resumeId, cwd)).configOptions;
+          configOptions = (await client.loadSession(opts.resumeId, cwd, mcpServers)).configOptions;
           id = opts.resumeId;
         } catch (e) {
           ctx.log.warn("session/load failed, reseeding", { resumeId: opts.resumeId, error: String(e) });
         }
       }
       if (!id) {
-        const r = await client.request("session/new", { cwd, mcpServers: [] });
+        const r = await client.request("session/new", { cwd, mcpServers });
         id = String(r.sessionId);
         configOptions = r.configOptions;
       }
@@ -68,14 +88,28 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
         cwd,
         model: opts.model,
         configOptions,
+        mcpServers,
         mode: permissionMode(ctx),
         reseeded: id !== opts.resumeId && opts.resumeId !== undefined,
         log: ctx.log,
         blobPath: (blobId) => ctx.store.blobs.path(blobId),
-        onClose: () => sessions.delete(devin),
+        onClose: () => {
+          sessions.delete(devin);
+          tools.revoke(opts.sessionId);
+        },
       });
       await devin.configure();
       sessions.add(devin);
+      client.guard(id, async (toolCall) => {
+        // valet's own MCP tools are gated in ToolSurface.call; Devin asks about them too, so skip those here.
+        const rule = (toolCall._meta as Record<string, unknown> | undefined)?.["cognition.ai/permissionRule"];
+        if (typeof rule === "string" && rule.startsWith("mcp__valet__")) return undefined;
+        const name = String(toolCall.title ?? toolCall.kind ?? "tool");
+        const verdict = await opts.tools.authorize(name, toolCall.rawInput ?? {}, {
+          callId: String(toolCall.toolCallId ?? ""),
+        });
+        return "denied" in verdict ? verdict.denied : undefined;
+      });
       ctx.store.sessions.setProviderState(opts.sessionId, PROVIDER_KEY, { resumeId: id });
       return devin;
     },

@@ -24,6 +24,7 @@ export function createUtility(ctx: PluginContext<DevinConfig>, client: AcpClient
         model,
         mode: "plan",
         configOptions: created.configOptions,
+        mcpServers: [],
         reseeded: false,
         log: ctx.log,
         blobPath: (id) => ctx.store.blobs.path(id),

@@ -11,6 +11,8 @@ export interface SessionInit {
   mode: string;
   configOptions: unknown;
   reseeded: boolean;
+  /** ACP MCP servers the session was opened with; reloads after a child restart pass them again. */
+  mcpServers: Record<string, unknown>[];
   log: Logger;
   blobPath(id: string): string;
   onClose(): void;
@@ -69,7 +71,8 @@ export class DevinSession implements AgentSession {
     const { client, id, cwd } = this.init;
     await client.ensure();
     if (this.generation === client.generation) return;
-    this.init.configOptions = (await client.loadSession(id, cwd)).configOptions ?? this.init.configOptions;
+    this.init.configOptions =
+      (await client.loadSession(id, cwd, this.init.mcpServers)).configOptions ?? this.init.configOptions;
     this.generation = client.generation;
     await this.configure();
   }
@@ -82,6 +85,7 @@ export class DevinSession implements AgentSession {
 
   async close(): Promise<void> {
     this.init.client.unlisten(this.init.id);
+    this.init.client.unguard(this.init.id);
     this.init.onClose();
   }
 

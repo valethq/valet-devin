@@ -1,6 +1,8 @@
 import type { Logger } from "@valethq/sdk";
 
 export type Obj = Record<string, unknown>;
+/** Returns a denial reason to refuse a permission request, or undefined to let the normal rules decide. */
+export type Guard = (toolCall: Obj) => Promise<string | undefined>;
 type Pending = { resolve(v: Obj): void; reject(e: Error): void };
 type Proc = Bun.Subprocess<"pipe", "pipe", "ignore">;
 
@@ -19,6 +21,7 @@ export class AcpClient {
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private listeners = new Map<string, (update: Obj) => void>();
+  private guards = new Map<string, Guard>();
   private loading = new Set<string>();
   private delay = MIN_DELAY;
   private retryAt = 0;
@@ -38,16 +41,25 @@ export class AcpClient {
     this.listeners.delete(sessionId);
   }
 
+  /** Asked before each permission request for the session. Resolves to a denial reason, or undefined to allow. */
+  guard(sessionId: string, fn: Guard): void {
+    this.guards.set(sessionId, fn);
+  }
+
+  unguard(sessionId: string): void {
+    this.guards.delete(sessionId);
+  }
+
   async request(method: string, params: Obj): Promise<Obj> {
     await this.ensure();
     return this.send(method, params);
   }
 
-  async loadSession(sessionId: string, cwd: string): Promise<Obj> {
+  async loadSession(sessionId: string, cwd: string, mcpServers: Obj[]): Promise<Obj> {
     await this.ensure();
     this.loading.add(sessionId);
     try {
-      return await this.send("session/load", { sessionId, cwd, mcpServers: [] });
+      return await this.send("session/load", { sessionId, cwd, mcpServers });
     } finally {
       this.loading.delete(sessionId);
     }
@@ -191,13 +203,20 @@ export class AcpClient {
     if (method !== "session/request_permission") {
       reply({ error: { code: -32601, message: `method not found: ${method}` } });
     } else {
-      reply({ result: { outcome: this.decide(params) } });
+      this.decide(params).then(
+        (outcome) => reply({ result: { outcome } }),
+        (error: unknown) => reply({ error: { code: -32603, message: String(error) } }),
+      );
     }
   }
 
-  private decide(params: Obj): Obj {
-    const kind = (params.toolCall as Obj | undefined)?.kind;
-    const deny = typeof kind === "string" && this.opts.denyKinds.includes(kind);
+  private async decide(params: Obj): Promise<Obj> {
+    const toolCall = (params.toolCall ?? {}) as Obj;
+    const kind = toolCall.kind;
+    this.opts.log.debug("devin permission request", { toolCall });
+    const denial = await this.guards.get(String(params.sessionId ?? ""))?.(toolCall);
+    if (denial !== undefined) this.opts.log.info("devin tool call denied by policy", { reason: denial });
+    const deny = denial !== undefined || (typeof kind === "string" && this.opts.denyKinds.includes(kind));
     const options = (params.options ?? []) as { optionId: string; kind: string }[];
     const wanted = deny ? ["reject_once", "reject_always"] : ["allow_once", "allow_always"];
     for (const k of wanted) {

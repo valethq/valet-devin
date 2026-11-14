@@ -1,7 +1,13 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentEvent, AgentProvider, PluginContext, ScopeProvider } from "@valethq/sdk";
+import type { AgentEvent, AgentProvider, PluginContext, ScopeProvider, ToolSurface } from "@valethq/sdk";
+
+export const noTools: ToolSurface = {
+  list: () => [],
+  call: async () => ({ content: [] }),
+  authorize: async (_name, input) => ({ input }),
+};
 import plugin from "../src/index";
 import type { DevinConfig } from "../src/config";
 
@@ -18,6 +24,11 @@ export function fakeCtx(config: DevinConfig, blobs: Record<string, string> = {})
   const logger = (level: string) => (msg: string, data?: Record<string, unknown>) =>
     logs.push({ level, msg, data });
   const ctx = {
+    plugin: { version: "0.1.0" },
+    http: {
+      route: () => ({ dispose() {} }),
+      url: (path: string) => `http://127.0.0.1:7437/plugins/valet-devin${path}`,
+    },
     config,
     log: { debug: logger("debug"), info: logger("info"), warn: logger("warn"), error: logger("error") },
     onDispose: (fn: () => void) => disposers.push(fn),
