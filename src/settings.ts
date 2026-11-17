@@ -1,20 +1,6 @@
 import type { PluginContext } from "@valethq/sdk";
 import { DEFAULT_UTILITY_MODEL, type DevinConfig } from "./config";
 
-export interface SettingsPanel {
-  title: string;
-  description?: string;
-  schema: Record<string, unknown>;
-  get(): Record<string, unknown> | Promise<Record<string, unknown>>;
-  set(values: Record<string, unknown>): void | Promise<void>;
-}
-
-declare module "@valethq/sdk" {
-  interface ValetScopes {
-    settings: SettingsPanel;
-  }
-}
-
 const MODES = ["normal", "accept-edits", "smart", "plan", "bypass"] as const;
 type Mode = (typeof MODES)[number];
 

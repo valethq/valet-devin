@@ -1,19 +1,15 @@
 import { expect, test } from "bun:test";
-import type { PluginContext } from "@valethq/sdk";
+import type { PluginContext, SettingsPanel } from "@valethq/sdk";
 import { fakeConfig } from "./helpers";
-import {
-  hideAdaptive,
-  hideFusion,
-  permissionMode,
-  registerSettings,
-  utilityModel,
-  type SettingsPanel,
-} from "../src/settings";
+import { hideAdaptive, hideFusion, permissionMode, registerSettings, utilityModel } from "../src/settings";
 import type { DevinConfig } from "../src/config";
+
+/** The panels under test have a form, so get and set are present. */
+type FormPanel = SettingsPanel & Required<Pick<SettingsPanel, "get" | "set">>;
 
 function kvCtx(config: DevinConfig) {
   const kv = new Map<string, unknown>();
-  const panels: { key?: string; impl: SettingsPanel }[] = [];
+  const panels: { key?: string; impl: FormPanel }[] = [];
   const ctx = {
     config,
     storage: {
@@ -26,7 +22,7 @@ function kvCtx(config: DevinConfig) {
     },
     scopes: {
       define: () => {},
-      provide: (_s: string, impl: SettingsPanel, opts?: { key?: string }) => {
+      provide: (_s: string, impl: FormPanel, opts?: { key?: string }) => {
         panels.push({ key: opts?.key, impl });
         return { dispose() {} };
       },
