@@ -11,6 +11,15 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
+      "customModels": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id"],
+          "additionalProperties": false,
+          "properties": { "id": { "type": "string" }, "name": { "type": "string" } }
+        }
+      },
       "command": {
         "type": "array",
         "items": {

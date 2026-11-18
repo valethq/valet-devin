@@ -1,8 +1,16 @@
+/** A model the user adds by hand; `id` goes to the harness unchanged, `name` is the picker label. */
+export interface CustomModel {
+  id: string;
+  name?: string;
+}
+
 export interface DevinConfig {
   command?: string[];
   permissionMode?: string;
   refusalFallback?: string[];
   models?: { id: string; name?: string; contextWindow?: number }[];
+  /** Extra picker entries added to whatever `devin models` reports. Also in the settings panel. */
+  customModels?: CustomModel[];
   denyKinds?: string[];
   hideFusion?: boolean;
   hideAdaptive?: boolean;

@@ -351,3 +351,19 @@ test("a chunk flushes the other stream's held text", () => {
   expect(upd("agent_thought_chunk", `r${LT}close|>junk`)).toEqual([{ type: "reasoning-delta", text: "r" }]);
   expect(upd("agent_thought_chunk", "dropped")).toEqual([]);
 });
+
+test("modelLister appends custom models and lets one rename a listed model", async () => {
+  const list = modelLister(
+    {},
+    async () => SAMPLE,
+    undefined,
+    undefined,
+    () => [
+      { id: "swe-2-high", name: "SWE" },
+      { id: "my-model", name: "Mine" },
+    ],
+  );
+  const models = await list();
+  expect(models.find((m) => m.id === "swe-2-high")?.name).toBe("SWE");
+  expect(models.at(-1)).toMatchObject({ id: "my-model", name: "Mine" });
+});

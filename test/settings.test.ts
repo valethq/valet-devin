@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { PluginContext } from "@valethq/sdk";
 import { fakeConfig } from "./helpers";
 import {
+  customModels,
   hideAdaptive,
   hideFusion,
   permissionMode,
@@ -70,6 +71,7 @@ test("hideFusion and hideAdaptive default on, follow config, and can be flipped 
   expect(await panel?.impl.get()).toEqual({
     permissionMode: "accept-edits",
     utilityModel: "claude-haiku-5-5-low",
+    customModels: [],
     hideFusion: true,
     hideAdaptive: true,
   });
@@ -88,4 +90,19 @@ test("utilityModel prefers the panel, then config; empty turns it off", async ()
   await panels[0]?.impl.set({ utilityModel: "" });
   expect(utilityModel(ctx)).toBeUndefined();
   expect(() => panels[0]?.impl.set({ utilityModel: 3 })).toThrow("utilityModel must be a string");
+});
+
+test("customModels round-trips through the panel and rejects entries without a model name", async () => {
+  const { cfg } = fakeConfig({});
+  const { ctx, panels } = kvCtx(cfg);
+  registerSettings(ctx);
+  const panel = panels[0];
+  await panel?.impl.set({
+    customModels: [
+      { id: " my-model ", name: "Mine" },
+      { id: "bare", name: "" },
+    ],
+  });
+  expect(customModels(ctx)).toEqual([{ id: "my-model", name: "Mine" }, { id: "bare" }]);
+  expect(() => panel?.impl.set({ customModels: [{ id: "" }] })).toThrow("customModels");
 });

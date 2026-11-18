@@ -1,5 +1,5 @@
 import type { ModelInfo } from "@valethq/sdk";
-import { type DevinConfig, DEFAULT_MODELS } from "./config";
+import { type CustomModel, type DevinConfig, DEFAULT_MODELS } from "./config";
 
 const TTL_MS = 10 * 60_000;
 const DEFAULT_WINDOW = 200_000;
@@ -80,16 +80,32 @@ export function isHidden(id: string, hidden: HiddenModels): boolean {
   return (hidden.fusion && id.startsWith("fusion-")) || (hidden.adaptive && id === "adaptive");
 }
 
+/** Custom models are appended unfiltered; one that shares an id with a listed model renames it. */
+export function withCustom(models: ModelInfo[], custom: CustomModel[]): ModelInfo[] {
+  const extra = new Map(custom.map((m) => [m.id, m]));
+  const listed = models.map((m) => {
+    const c = extra.get(m.id);
+    extra.delete(m.id);
+    return c?.name ? { ...m, name: c.name } : m;
+  });
+  return [...listed, ...[...extra.values()].map(toModelInfo)];
+}
+
 /** Hidden filter is applied per call, so a settings change shows up without waiting out the cache. */
 export function modelLister(
   cfg: DevinConfig,
   run: () => Promise<string> = runDevinModels,
   acpModels: () => Promise<string[] | undefined> = async () => undefined,
   hidden: () => HiddenModels = () => ({ fusion: true, adaptive: true }),
+  custom: () => CustomModel[] = () => [],
 ) {
   let cache: { at: number; models: ModelInfo[] } | undefined;
   return async (): Promise<ModelInfo[]> => {
-    const keep = (models: ModelInfo[]) => models.filter((m) => !isHidden(m.id, hidden()));
+    const keep = (models: ModelInfo[]) =>
+      withCustom(
+        models.filter((m) => !isHidden(m.id, hidden())),
+        custom(),
+      );
     if (cache && Date.now() - cache.at < TTL_MS) return keep(cache.models);
     try {
       let parsed = parseModels(await run());

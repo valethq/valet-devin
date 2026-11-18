@@ -9,7 +9,7 @@ import { AcpClient } from "./acp";
 import { type DevinConfig, spawnCommand } from "./config";
 import { modelLister, optionValues } from "./models";
 import { DevinSession } from "./session";
-import { hideAdaptive, hideFusion, permissionMode } from "./settings";
+import { customModels, hideAdaptive, hideFusion, permissionMode } from "./settings";
 import { createUtility } from "./utility";
 
 export const PROVIDER_KEY = "devin-cli";
@@ -59,6 +59,7 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
       undefined,
       acpModels,
       () => ({ fusion: hideFusion(ctx), adaptive: hideAdaptive(ctx) }),
+      () => customModels(ctx),
     ),
     utility: createUtility(ctx, client),
     async open(opts): Promise<AgentSession> {
@@ -89,6 +90,7 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
         model: opts.model,
         configOptions,
         mcpServers,
+        isCustomModel: (m) => customModels(ctx).some((c) => c.id === m),
         mode: permissionMode(ctx),
         reseeded: id !== opts.resumeId && opts.resumeId !== undefined,
         log: ctx.log,

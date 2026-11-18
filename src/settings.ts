@@ -1,5 +1,5 @@
 import type { PluginContext } from "@valethq/sdk";
-import { DEFAULT_UTILITY_MODEL, type DevinConfig } from "./config";
+import { type CustomModel, DEFAULT_UTILITY_MODEL, type DevinConfig } from "./config";
 
 export interface SettingsPanel {
   title: string;
@@ -41,6 +41,22 @@ export function utilityModel(ctx: PluginContext<DevinConfig>): string | undefine
   return v.trim() === "" ? undefined : v.trim();
 }
 
+/** Panel value wins over config.json. Entries without an id are dropped. */
+export function customModels(ctx: PluginContext<DevinConfig>): CustomModel[] {
+  const v = ctx.storage.kv.get<unknown>("customModels") ?? ctx.config?.customModels;
+  return Array.isArray(v)
+    ? v
+        .filter(isCustomModel)
+        .map(({ id, name }) => ({ id: id.trim(), ...(name?.trim() && { name: name.trim() }) }))
+    : [];
+}
+
+const isCustomModel = (m: unknown): m is CustomModel =>
+  typeof m === "object" &&
+  m !== null &&
+  typeof (m as CustomModel).id === "string" &&
+  (m as CustomModel).id.trim() !== "";
+
 export function registerSettings(ctx: PluginContext<DevinConfig>): void {
   ctx.scopes.define({ name: "settings", version: 1, cardinality: "many" });
   ctx.scopes.provide(
@@ -68,6 +84,19 @@ export function registerSettings(ctx: PluginContext<DevinConfig>): void {
             title: "Hide Adaptive",
             description: "Hides the adaptive model from the model list.",
           },
+          customModels: {
+            type: "array",
+            title: "Custom models",
+            description: "Extra models for the picker. The model name is sent to devin as is.",
+            items: {
+              type: "object",
+              required: ["id"],
+              properties: {
+                id: { type: "string", title: "Model name" },
+                name: { type: "string", title: "Friendly name" },
+              },
+            },
+          },
           utilityModel: {
             type: "string",
             title: "Utility model",
@@ -78,6 +107,7 @@ export function registerSettings(ctx: PluginContext<DevinConfig>): void {
       get: () => ({
         permissionMode: permissionMode(ctx),
         utilityModel: utilityModel(ctx) ?? "",
+        customModels: customModels(ctx),
         hideFusion: hideFusion(ctx),
         hideAdaptive: hideAdaptive(ctx),
       }),
@@ -91,6 +121,12 @@ export function registerSettings(ctx: PluginContext<DevinConfig>): void {
         }
         if (v.utilityModel !== undefined && typeof v.utilityModel !== "string")
           throw new Error("utilityModel must be a string");
+        if (
+          v.customModels !== undefined &&
+          !(Array.isArray(v.customModels) && v.customModels.every(isCustomModel))
+        )
+          throw new Error("customModels entries need a model name");
+        if (v.customModels !== undefined) ctx.storage.kv.set("customModels", v.customModels);
         if (mode !== undefined) ctx.storage.kv.set("permissionMode", mode);
         if (typeof v.utilityModel === "string") ctx.storage.kv.set("utilityModel", v.utilityModel);
         for (const key of ["hideFusion", "hideAdaptive"] as const) {

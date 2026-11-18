@@ -13,6 +13,8 @@ export interface SessionInit {
   reseeded: boolean;
   /** ACP MCP servers the session was opened with; reloads after a child restart pass them again. */
   mcpServers: Record<string, unknown>[];
+  /** Whether `id` is a user-added model, which is sent to devin as is even if ACP does not list it. */
+  isCustomModel?(id: string): boolean;
   log: Logger;
   blobPath(id: string): string;
   onClose(): void;
@@ -55,7 +57,9 @@ export class DevinSession implements AgentSession {
   }
 
   private async applyModel(id: string): Promise<void> {
-    const resolved = resolveModel(id, { models: optionValues(this.init.configOptions, "model") });
+    const resolved =
+      resolveModel(id, { models: optionValues(this.init.configOptions, "model") }) ??
+      (this.init.isCustomModel?.(id) ? { model: id } : null);
     if (!resolved) throw new Error(`model "${id}" is not available in devin acp`);
     await this.setOption("model", resolved.model);
     if (
