@@ -16,7 +16,7 @@ function setup(extra = {}, blobs: Record<string, string> = {}) {
   const { cfg, logFile } = fakeConfig(extra);
   const h = fakeCtx(cfg, blobs);
   disposers.push(h.dispose);
-  const open = (o: { resumeId?: string; model?: string } = {}) =>
+  const open = (o: { resumeId?: string; model?: string; effort?: string; fast?: boolean } = {}) =>
     h.provider.open({
       sessionId: "s1",
       cwd: "/x",
@@ -30,7 +30,7 @@ function setup(extra = {}, blobs: Record<string, string> = {}) {
 
 test("open, prompt maps events, setModel", async () => {
   const { open, state, logFile } = setup();
-  const s = await open({ model: "swe-2-high" });
+  const s = await open({ model: "swe-2" });
   expect(state["s1:devin-cli"]).toEqual({ resumeId: s.resumeId });
   const events = await collect(s.prompt(input("ping"), new AbortController().signal));
   expect(events.map((e) => e.type)).toEqual([
@@ -48,8 +48,7 @@ test("open, prompt maps events, setModel", async () => {
   expect(events.find((e) => e.type === "tool-end")).toMatchObject({ callId: "c1", exitCode: 0 });
   expect(events.at(-2)).toEqual({ type: "usage", contextTokens: 1234, inputTokens: 10, outputTokens: 5 });
   expect(events.at(-1)).toEqual({ type: "finish", reason: "stop" });
-  await s.setModel?.("gpt-x-high-fast");
-  await expect(s.setModel?.("nope")).rejects.toThrow('model "nope" is not available in devin acp');
+  await s.setModel?.("gpt-x", { effort: "high", fast: true });
   const c = calls(logFile);
   expect(c.find((x) => x.method === "session/new")?.params).toEqual({
     cwd: "/tmp",
@@ -58,14 +57,13 @@ test("open, prompt maps events, setModel", async () => {
   expect(c.find((x) => x.method === "session/set_mode")?.params.modeId).toBe("accept-edits");
   expect(c.filter((x) => x.method === "session/set_config_option").map((x) => x.params.value)).toEqual([
     "swe-2-high",
-    "standard",
     "gpt-x",
     "high",
     "fast",
   ]);
+  await expect(s.setModel?.("nope", {})).rejects.toThrow('model "nope" is not available in devin acp');
   await s.close();
 });
-
 test("resume swallows replay; failed load reseeds", async () => {
   const { open } = setup({ permissionMode: "plan" });
   const first = await open();
@@ -258,8 +256,8 @@ test("/compact is a turn that reports the compaction start and end", async () =>
 });
 
 test("utility completes in a throwaway plan-mode session on the Utility model", async () => {
-  const { provider, logFile } = setup({ utilityModel: "swe-2-high" });
-  expect(provider.utility?.model()).toBe("swe-2-high");
+  const { provider, logFile } = setup({ utilityModel: "swe-2" });
+  expect(provider.utility?.model()).toBe("swe-2");
   const out = await provider.utility?.complete(
     { system: "Say pong.", prompt: "ping" },
     new AbortController().signal,
@@ -278,7 +276,7 @@ test("utility is off for an empty model and defaults to Haiku", async () => {
   await expect(off?.complete({ system: "s", prompt: "p" }, new AbortController().signal)).rejects.toThrow(
     "no utility model",
   );
-  expect(setup().provider.utility?.model()).toBe("claude-haiku-5-5-low");
+  expect(setup().provider.utility?.model()).toBe("claude-haiku-5-5");
 });
 
 test("utility rejects when the model is unavailable", async () => {

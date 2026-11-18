@@ -2,6 +2,7 @@ import { tmpdir } from "node:os";
 import type { PluginContext, UtilityModel } from "@valethq/sdk";
 import type { AcpClient } from "./acp";
 import type { DevinConfig } from "./config";
+import { resolveModel } from "./models";
 import { DevinSession } from "./session";
 import { utilityModel } from "./settings";
 
@@ -12,8 +13,9 @@ export function createUtility(ctx: PluginContext<DevinConfig>, client: AcpClient
   return {
     model: () => utilityModel(ctx),
     async complete(req, signal) {
-      const model = utilityModel(ctx);
-      if (!model) throw new Error("no utility model is configured");
+      const picked = utilityModel(ctx);
+      if (!picked) throw new Error("no utility model is configured");
+      const { model, effort } = resolveModel(picked);
       const cwd = tmpdir();
       await client.ensure();
       const created = await client.request("session/new", { cwd, mcpServers: [] });
@@ -22,6 +24,7 @@ export function createUtility(ctx: PluginContext<DevinConfig>, client: AcpClient
         id: String(created.sessionId),
         cwd,
         model,
+        ...(effort === undefined ? {} : { effort }),
         mode: "plan",
         configOptions: created.configOptions,
         mcpServers: [],

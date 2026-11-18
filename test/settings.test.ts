@@ -1,108 +1,52 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { PluginContext } from "@valethq/sdk";
-import { fakeConfig } from "./helpers";
-import {
-  customModels,
-  hideAdaptive,
-  hideFusion,
-  permissionMode,
-  registerSettings,
-  utilityModel,
-  type SettingsPanel,
-} from "../src/settings";
 import type { DevinConfig } from "../src/config";
+import { hideAdaptive, hideFusion, permissionMode, utilityModel } from "../src/settings";
+import { fakeCtx } from "./helpers";
 
-function kvCtx(config: DevinConfig) {
-  const kv = new Map<string, unknown>();
-  const panels: { key?: string; impl: SettingsPanel }[] = [];
-  const ctx = {
-    config,
-    storage: {
-      kv: {
-        get: <T>(k: string) => kv.get(k) as T | undefined,
-        set: (k: string, v: unknown) => void kv.set(k, v),
-        delete: (k: string) => void kv.delete(k),
-        list: () => [...kv.keys()],
-      },
-    },
-    scopes: {
-      define: () => {},
-      provide: (_s: string, impl: SettingsPanel, opts?: { key?: string }) => {
-        panels.push({ key: opts?.key, impl });
-        return { dispose() {} };
-      },
-    },
-  } as unknown as PluginContext<DevinConfig>;
-  return { ctx, kv, panels };
+function ctxWith(config: DevinConfig) {
+  const { ctx } = fakeCtx({ command: ["true"], ...config });
+  return ctx as unknown as PluginContext<DevinConfig>;
 }
 
-test("permissionMode prefers kv, then config, then accept-edits", () => {
-  const { cfg } = fakeConfig({ permissionMode: "smart" });
-  const { ctx, kv } = kvCtx(cfg);
-  expect(permissionMode(ctx)).toBe("smart");
-  kv.set("permissionMode", "plan");
-  expect(permissionMode(ctx)).toBe("plan");
-  kv.set("permissionMode", "bogus");
-  expect(permissionMode(ctx)).toBe("accept-edits");
-});
+const manifest = JSON.parse(readFileSync(join(import.meta.dir, "..", "manifest.json"), "utf8"));
+const props = manifest.configSchema.properties as Record<string, { default?: unknown }>;
 
-test("settings panel reports and validates permissionMode", async () => {
-  const { cfg } = fakeConfig({ permissionMode: "smart" });
-  const { ctx, panels } = kvCtx(cfg);
-  registerSettings(ctx);
-  const panel = panels[0];
-  expect(panel?.key).toBe("valet-devin");
-  expect(await panel?.impl.get()).toMatchObject({ permissionMode: "smart" });
-  await panel?.impl.set({ permissionMode: "plan" });
-  expect(await panel?.impl.get()).toMatchObject({ permissionMode: "plan" });
-  expect(() => panel?.impl.set({ permissionMode: "yolo" })).toThrow("permissionMode");
-});
-
-test("hideFusion and hideAdaptive default on, follow config, and can be flipped in the panel", async () => {
-  const { ctx, panels } = kvCtx({});
-  expect(hideFusion(ctx)).toBe(true);
-  expect(hideAdaptive(ctx)).toBe(true);
-  const off = kvCtx({ hideFusion: false, hideAdaptive: false });
-  expect(hideFusion(off.ctx)).toBe(false);
-  expect(hideAdaptive(off.ctx)).toBe(false);
-
-  registerSettings(ctx);
-  const panel = panels[0];
-  expect(await panel?.impl.get()).toEqual({
-    permissionMode: "accept-edits",
-    utilityModel: "claude-haiku-5-5-low",
-    customModels: [],
-    hideFusion: true,
-    hideAdaptive: true,
+describe("settings are config", () => {
+  test("accessors fall back to the same defaults the manifest declares", () => {
+    const ctx = ctxWith({});
+    expect(permissionMode(ctx)).toBe(props.permissionMode?.default as "accept-edits");
+    expect(hideFusion(ctx)).toBe(props.hideFusion?.default as boolean);
+    expect(hideAdaptive(ctx)).toBe(props.hideAdaptive?.default as boolean);
+    expect(utilityModel(ctx)).toBe(props.utilityModel?.default as string);
   });
-  await panel?.impl.set({ hideFusion: false });
-  expect(hideFusion(ctx)).toBe(false);
-  expect(hideAdaptive(ctx)).toBe(true);
-  expect(() => panel?.impl.set({ hideAdaptive: "yes" })).toThrow("hideAdaptive must be a boolean");
-});
 
-test("utilityModel prefers the panel, then config; empty turns it off", async () => {
-  const { ctx, panels } = kvCtx({ utilityModel: "swe-2-flash-medium" });
-  expect(utilityModel(ctx)).toBe("swe-2-flash-medium");
-  registerSettings(ctx);
-  await panels[0]?.impl.set({ utilityModel: "claude-haiku-5-5-low" });
-  expect(utilityModel(ctx)).toBe("claude-haiku-5-5-low");
-  await panels[0]?.impl.set({ utilityModel: "" });
-  expect(utilityModel(ctx)).toBeUndefined();
-  expect(() => panels[0]?.impl.set({ utilityModel: 3 })).toThrow("utilityModel must be a string");
-});
-
-test("customModels round-trips through the panel and rejects entries without a model name", async () => {
-  const { cfg } = fakeConfig({});
-  const { ctx, panels } = kvCtx(cfg);
-  registerSettings(ctx);
-  const panel = panels[0];
-  await panel?.impl.set({
-    customModels: [
-      { id: " my-model ", name: "Mine" },
-      { id: "bare", name: "" },
-    ],
+  test("config values win; an empty utility model turns side jobs off", () => {
+    const ctx = ctxWith({
+      permissionMode: "plan",
+      hideFusion: false,
+      hideAdaptive: false,
+      utilityModel: " ",
+    });
+    expect(permissionMode(ctx)).toBe("plan");
+    expect(hideFusion(ctx)).toBe(false);
+    expect(hideAdaptive(ctx)).toBe(false);
+    expect(utilityModel(ctx)).toBeUndefined();
   });
-  expect(customModels(ctx)).toEqual([{ id: "my-model", name: "Mine" }, { id: "bare" }]);
-  expect(() => panel?.impl.set({ customModels: [{ id: "" }] })).toThrow("customModels");
+
+  test("the manifest no longer carries per-provider custom models or a settings panel", () => {
+    expect(props.customModels).toBeUndefined();
+    expect(manifest.provides).toEqual(["inference@1"]);
+  });
+
+  test("setConfig updates what accessors read", () => {
+    const { ctx, setConfig } = fakeCtx({ command: ["true"], permissionMode: "smart" });
+    expect(permissionMode(ctx)).toBe("smart");
+    setConfig({ permissionMode: "plan", hideFusion: false, utilityModel: "swe-2" });
+    expect(permissionMode(ctx)).toBe("plan");
+    expect(hideFusion(ctx)).toBe(false);
+    expect(utilityModel(ctx)).toBe("swe-2");
+  });
 });

@@ -6,61 +6,112 @@
   "description": "inference@1 agent provider devin-cli over devin acp.",
   "valet": "^0.1.0",
   "main": "./src/index.ts",
-  "provides": ["inference@1", "settings@1"],
+  "provides": ["inference@1"],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
+    "x-icon": "devin",
     "properties": {
-      "customModels": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "required": ["id"],
-          "additionalProperties": false,
-          "properties": { "id": { "type": "string" }, "name": { "type": "string" } }
-        }
-      },
-      "command": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      },
       "permissionMode": {
-        "type": "string"
+        "type": "string",
+        "title": "Permission mode",
+        "description": "Sent as modeId to session/set_mode when a session opens.",
+        "enum": ["normal", "accept-edits", "smart", "plan", "bypass"],
+        "enumNames": ["Normal", "Accept edits", "Smart", "Plan", "Bypass permissions"],
+        "default": "accept-edits",
+        "x-section": "Behaviour"
       },
-      "refusalFallback": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
+      "utilityModel": {
+        "type": "string",
+        "title": "Utility model",
+        "description": "Model for small side jobs such as naming sessions; may end in an effort (claude-haiku-5-5-low). Empty turns them off.",
+        "default": "claude-haiku-5-5",
+        "x-section": "Behaviour"
+      },
+      "hideFusion": {
+        "type": "boolean",
+        "title": "Hide Fusion models",
+        "description": "Hides the fusion-* model variants from the model list.",
+        "default": true,
+        "x-section": "Models"
+      },
+      "hideAdaptive": {
+        "type": "boolean",
+        "title": "Hide Adaptive",
+        "description": "Hides the adaptive model from the model list.",
+        "default": true,
+        "x-section": "Models"
       },
       "denyKinds": {
         "type": "array",
         "items": {
           "type": "string"
-        }
+        },
+        "title": "Denied ACP kinds",
+        "description": "ACP tool kinds Devin may never run when it asks permission, e.g. execute.",
+        "x-section": "Tools",
+        "x-advanced": true
       },
-      "hideFusion": {
-        "type": "boolean"
+      "command": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "ACP command",
+        "description": "Command used to start the Devin ACP child. Default: devin acp. Needs a valet restart.",
+        "x-advanced": true
       },
-      "hideAdaptive": {
-        "type": "boolean"
+      "refusalFallback": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Refusal fallbacks",
+        "description": "Models passed as --refusal-fallback when the ACP child starts. Needs a valet restart.",
+        "x-advanced": true
       },
       "models": {
         "type": "array",
+        "title": "Model list",
+        "description": "Replaces the live devin models list. Rename or hide models on the Models page instead.",
+        "x-advanced": true,
         "items": {
           "type": "object",
           "required": ["id"],
+          "additionalProperties": false,
           "properties": {
             "id": {
-              "type": "string"
+              "type": "string",
+              "title": "Model id"
             },
             "name": {
-              "type": "string"
+              "type": "string",
+              "title": "Name"
             },
             "contextWindow": {
-              "type": "number"
+              "type": "number",
+              "title": "Context window"
+            },
+            "maxOutputTokens": {
+              "type": "number",
+              "title": "Max output"
+            },
+            "efforts": {
+              "type": "array",
+              "title": "Efforts",
+              "items": {
+                "type": "string",
+                "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+              }
+            },
+            "defaultEffort": {
+              "type": "string",
+              "title": "Default effort",
+              "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+            },
+            "fast": {
+              "type": "boolean",
+              "title": "Fast mode"
             }
           }
         }

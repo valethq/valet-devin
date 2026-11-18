@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { drainText, mapStop, mapUpdate, newUpdateState } from "../src/events";
-import { modelLister, parseModels, resolveModel } from "../src/models";
+import { collapseModels, modelLister, parseModels, resolveModel, toAcp } from "../src/models";
 
 const SAMPLE = `Available models (51 families)
 
@@ -10,6 +10,8 @@ Adaptive (adaptive)
 SWE-2 (swe-2)
   aliases: swe
   swe-2-high      SWE-2 High  [262K context, Free]
+  swe-2-medium    SWE-2 Medium
+  swe-2-medium-lightning  SWE-2 Medium Lightning  [$1 / 1M Input]
   gemini-x        Gemini X  [1M context, $1 / 1M Input]
 or switch models in a session with \`/model <name>\`.
 `;
@@ -18,6 +20,8 @@ test("parseModels", () => {
   expect(parseModels(SAMPLE)).toEqual([
     { id: "adaptive", name: "Adaptive", contextWindow: 1000000 },
     { id: "swe-2-high", name: "SWE-2 High", contextWindow: 262000 },
+    { id: "swe-2-medium", name: "SWE-2 Medium", contextWindow: 1000000 },
+    { id: "swe-2-medium-lightning", name: "SWE-2 Medium Lightning", contextWindow: 1000000 },
     { id: "gemini-x", name: "Gemini X", contextWindow: 1000000 },
   ]);
 });
@@ -36,20 +40,48 @@ test("parseModels fills unknown windows from non-fusion max", () => {
   expect(parseModels("  lone  Lone  [$1]")[0]?.contextWindow).toBe(200000);
 });
 
+test("collapseModels lists each family once with efforts and fast", () => {
+  expect(collapseModels(parseModels(SAMPLE))).toEqual([
+    { id: "adaptive", name: "Adaptive", contextWindow: 1000000 },
+    {
+      id: "swe-2",
+      name: "SWE-2",
+      contextWindow: 1000000,
+      efforts: ["medium", "high"],
+      defaultEffort: "high",
+      fast: true,
+    },
+    { id: "gemini-x", name: "Gemini X", contextWindow: 1000000 },
+  ]);
+});
+
 test("modelLister caches and falls back", async () => {
   let runs = 0;
-  const list = modelLister({}, async () => {
-    runs++;
-    return SAMPLE;
-  });
+  const list = modelLister(
+    () => ({}),
+    async () => {
+      runs++;
+      return SAMPLE;
+    },
+  );
   await list();
-  expect((await list()).map((m) => m.id)).toContain("swe-2-high");
+  expect((await list()).map((m) => m.id)).toContain("swe-2");
   expect(runs).toBe(1);
-  const fallback = await modelLister({ models: [{ id: "x", contextWindow: 5 }] }, async () => {
-    throw new Error("no devin");
-  })();
-  expect(fallback).toMatchObject([{ id: "x", name: "x", contextWindow: 5 }]);
-  expect((await modelLister({}, async () => "")()).map((m) => m.id)).toContain("claude-fable-5-2-medium");
+  const configured = await modelLister(
+    () => ({ models: [{ id: "x", contextWindow: 5 }] }),
+    async () => {
+      throw new Error("no devin");
+    },
+  )();
+  expect(configured).toMatchObject([{ id: "x", name: "x", contextWindow: 5 }]);
+  expect(
+    (
+      await modelLister(
+        () => ({}),
+        async () => "",
+      )()
+    ).map((m) => m.id),
+  ).toContain("claude-fable-5-2");
 });
 
 test("mapUpdate", () => {
@@ -177,21 +209,44 @@ test("mapStop", () => {
 
 const ACP = ["swe-2-high", "claude-opus-5-5-medium", "gpt-6-sol-medium", "glm-5-2"];
 
-test("resolveModel", () => {
-  const r = (id: string) => resolveModel(id, { models: ACP });
-  expect(r("swe-2-high")).toEqual({ model: "swe-2-high" });
-  expect(r("claude-opus-5-5-low")).toEqual({ model: "claude-opus-5-5-medium", thoughtLevel: "low" });
-  expect(r("swe-2-medium-lightning")).toEqual({ model: "swe-2-high", thoughtLevel: "medium", speed: "fast" });
-  expect(r("glm-5-2-high-fast-priority")).toEqual({ model: "glm-5-2", thoughtLevel: "high", speed: "fast" });
-  expect(r("gpt-6-sol-max")).toEqual({ model: "gpt-6-sol-medium", thoughtLevel: "max" });
-  expect(r("unknown-low")).toBeNull();
+test("resolveModel strips a trailing effort for the utility path", () => {
+  expect(resolveModel("claude-haiku-5-5-low")).toEqual({ model: "claude-haiku-5-5", effort: "low" });
+  expect(resolveModel("swe-2")).toEqual({ model: "swe-2" });
+});
+
+test("toAcp maps base model + options onto ACP config values", () => {
+  expect(toAcp("swe-2", { effort: "medium", fast: true }, ACP)).toEqual({
+    model: "swe-2-high",
+    thoughtLevel: "medium",
+    speed: "fast",
+  });
+  expect(toAcp("claude-opus-5-5", { effort: "low" }, ACP)).toEqual({
+    model: "claude-opus-5-5-medium",
+    thoughtLevel: "low",
+  });
+  expect(toAcp("glm-5-2", { effort: "high", fast: true }, ACP)).toEqual({
+    model: "glm-5-2",
+    thoughtLevel: "high",
+    speed: "fast",
+  });
+  expect(toAcp("gpt-6-sol", { effort: "max" }, ACP)).toEqual({
+    model: "gpt-6-sol-medium",
+    thoughtLevel: "max",
+  });
+  expect(toAcp("unknown", {}, ACP)).toBeNull();
 });
 
 test("modelLister filters to ACP-resolvable ids", async () => {
   const out = "  swe-2-low  A  [1K context]\n  nope-high  B  [1K context]\n  glm-5-2-fast  C  [1K context]\n";
   const ids = async (acp: () => Promise<string[] | undefined>) =>
-    (await modelLister({}, async () => out, acp)()).map((m) => m.id);
-  expect(await ids(async () => ACP)).toEqual(["swe-2-low", "glm-5-2-fast"]);
+    (
+      await modelLister(
+        () => ({}),
+        async () => out,
+        acp,
+      )()
+    ).map((m) => m.id);
+  expect(await ids(async () => ACP)).toEqual(["swe-2", "glm-5-2"]);
   expect(await ids(async () => undefined)).toHaveLength(3);
 });
 
@@ -204,20 +259,16 @@ test("modelLister hides fusion and adaptive per current settings", async () => {
   ].join("\n");
   let hidden = { fusion: true, adaptive: true };
   const list = modelLister(
-    {},
+    () => ({}),
     async () => out,
     undefined,
     () => hidden,
   );
-  expect((await list()).map((m) => m.id)).toEqual(["swe-2-high"]);
+  expect((await list()).map((m) => m.id)).toEqual(["swe-2"]);
   hidden = { fusion: false, adaptive: true };
-  expect((await list()).map((m) => m.id)).toEqual([
-    "swe-2-high",
-    "fusion-a-sidekick-b",
-    "fusion-c-sidekick-d",
-  ]);
+  expect((await list()).map((m) => m.id)).toEqual(["swe-2", "fusion-a-sidekick-b", "fusion-c-sidekick-d"]);
   hidden = { fusion: true, adaptive: false };
-  expect((await list()).map((m) => m.id)).toEqual(["adaptive", "swe-2-high"]);
+  expect((await list()).map((m) => m.id)).toEqual(["adaptive", "swe-2"]);
 });
 
 test("cumulative tool output", () => {
@@ -352,18 +403,19 @@ test("a chunk flushes the other stream's held text", () => {
   expect(upd("agent_thought_chunk", "dropped")).toEqual([]);
 });
 
-test("modelLister appends custom models and lets one rename a listed model", async () => {
+test("modelLister uses config models when set", async () => {
   const list = modelLister(
-    {},
+    () => ({
+      models: [
+        { id: "swe-2", name: "SWE", efforts: ["high"], fast: true },
+        { id: "my-model", name: "Mine" },
+      ],
+    }),
     async () => SAMPLE,
-    undefined,
-    undefined,
-    () => [
-      { id: "swe-2-high", name: "SWE" },
-      { id: "my-model", name: "Mine" },
-    ],
   );
   const models = await list();
-  expect(models.find((m) => m.id === "swe-2-high")?.name).toBe("SWE");
-  expect(models.at(-1)).toMatchObject({ id: "my-model", name: "Mine" });
+  expect(models).toMatchObject([
+    { id: "swe-2", name: "SWE", efforts: ["high"], fast: true },
+    { id: "my-model", name: "Mine" },
+  ]);
 });
