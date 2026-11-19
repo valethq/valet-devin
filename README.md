@@ -32,6 +32,10 @@ Settings are this plugin's config (valet-core 12.1): the UI edits them through c
 
 Permission mode and hide flags are read when a session opens or the model list is served, so config changes apply then. `command`, `refusalFallback` and `denyKinds` apply when the ACP child next starts.
 
+## Plan usage
+
+The plugin's settings page shows Devin plan usage (a view-only `settings` panel above the config form): plan name, weekly quota used and when it resets, a daily cap when the plan has one, ACU usage when the plan has a limit, and extra usage balance. The numbers come from the same `GetUserStatus` call Devin's `/usage` screen uses, authenticated with the API key `devin auth login` stores in `${XDG_DATA_HOME:-~/.local/share}/devin/credentials.toml`. A reading is cached for a minute. "Refresh now" forces a read, at most once per 10 seconds.
+
 ## Tests
 
 `bun test` runs against a fake ACP child (`test/fixtures/fake-acp.ts`). A live test against real `devin acp` is skipped unless `VALET_LIVE_DEVIN=1`.
