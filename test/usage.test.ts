@@ -97,7 +97,7 @@ describe("parseDevinUserStatus", () => {
     expect(snapshot.windows).toEqual([
       { label: "Weekly", percent: 100, resetsAt: RESET, windowMs: WEEK_MS },
       { label: "Daily", percent: 25, resetsAt: 1_795_161_600_000, windowMs: 86_400_000 },
-      { label: "ACUs", percent: 25, display: "30 of 120" },
+      { label: "ACUs", percent: 25 },
     ]);
   });
 
@@ -116,13 +116,13 @@ describe("usageMeter", () => {
     ...over,
   });
 
-  test("shows percent used, time until reset, and an even-pace marker", () => {
+  test("shows percent left, time until reset, and an even-pace marker", () => {
     expect(usageMeter(window(), NOW)).toEqual({
       type: "meter",
       label: "Weekly",
-      value: 1,
-      display: "1% used",
-      caption: "resets in 3d 12h",
+      value: 99,
+      display: "99% left",
+      caption: "+1% in 3d 12h",
       status: "Under pace",
       marker: 50,
       tone: "normal",
@@ -131,7 +131,8 @@ describe("usageMeter", () => {
 
   test("a window past the even pace warns as it fills", () => {
     expect(usageMeter(window({ percent: 80 }), NOW)).toMatchObject({
-      display: "80% used",
+      value: 20,
+      display: "20% left",
       status: "Over pace",
       tone: "warning",
     });
@@ -206,7 +207,7 @@ describe("createUsage", () => {
       },
     });
     const blocks = await usage.view();
-    expect(JSON.stringify(blocks)).toContain("1% used");
+    expect(JSON.stringify(blocks)).toContain("99% left");
     expect(calls).toBe(1);
     t += 5_000;
     await usage.refresh(true);

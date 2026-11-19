@@ -97,7 +97,7 @@ describe("usage on the settings page", () => {
     const text = JSON.stringify(blocks);
     expect(text).toContain('"text":"Max"');
     expect(text).toContain('"label":"Weekly"');
-    expect(text).toContain("1% used");
+    expect(text).toContain("99% left");
     expect(text).toContain("Extra usage balance");
     expect(text).not.toContain('"label":"Daily"');
     await panel?.actions?.refresh?.({});

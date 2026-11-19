@@ -46,8 +46,6 @@ export interface UsageWindow {
   resetsAt?: number;
   /** Window length, for the even-pace marker. Absent for balances that are not a time window. */
   windowMs?: number;
-  /** Headline override, e.g. an ACU count. */
-  display?: string;
 }
 
 export interface UsageSnapshot {
@@ -169,7 +167,6 @@ export function parseDevinUserStatus(body: unknown): UsageSnapshot {
     windows.push({
       label: "ACUs",
       percent: clampPercent((consumed / acuLimit) * 100),
-      display: `${formatCount(consumed)} of ${formatCount(acuLimit)}`,
     });
   }
 
@@ -184,15 +181,6 @@ export function parseDevinUserStatus(body: unknown): UsageSnapshot {
 }
 
 const capitalize = (s: string) => (s ? (s[0]?.toUpperCase() ?? "") + s.slice(1) : s);
-
-function formatCount(n: number): string {
-  return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10);
-}
-
-function formatPct(n: number): string {
-  const rounded = Math.round(n * 10) / 10;
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
-}
 
 function formatUsd(amount: number): string {
   const sign = amount < 0 ? "-" : "";
@@ -214,9 +202,10 @@ export function untilReset(resetsAt: number, now = Date.now()): string {
 const toneOf = (percent: number): SettingsTone =>
   percent >= 95 ? "critical" : percent >= 80 ? "warning" : "normal";
 
-/** One meter per window. The bar is the share used; the marker is where an even burn-down would be by now. */
+/** One meter per window: the bar shows what is left, the marker where an even burn-down would be by now. */
 export function usageMeter(w: UsageWindow, now: number): SettingsBlock {
-  const used = Math.min(100, Math.max(0, w.percent));
+  const used = Math.round(Math.min(100, Math.max(0, w.percent)));
+  const left = 100 - used;
   const resetsAt = w.resetsAt;
   const remaining = resetsAt === undefined ? 0 : Math.max(0, resetsAt - now);
   const span = w.windowMs;
@@ -232,11 +221,13 @@ export function usageMeter(w: UsageWindow, now: number): SettingsBlock {
   return {
     type: "meter",
     label: w.label,
-    value: used,
-    display: w.display ?? `${formatPct(used)}% used`,
-    ...(remaining > 0 && resetsAt !== undefined && { caption: `resets in ${untilReset(resetsAt, now)}` }),
+    value: left,
+    display: `${left}% left`,
+    ...(used > 0 &&
+      remaining > 0 &&
+      resetsAt !== undefined && { caption: `+${used}% in ${untilReset(resetsAt, now)}` }),
     ...(status !== undefined && { status }),
-    ...(pace && { marker: burned }),
+    ...(pace && { marker: 100 - burned }),
     tone: toneOf(used),
   };
 }
