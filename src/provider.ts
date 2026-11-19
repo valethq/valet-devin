@@ -54,6 +54,7 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
     kind: "agent",
     id: PROVIDER_KEY,
     label: "Devin CLI",
+    icon: "devin",
     listModels: modelLister(cfg, undefined, acpModels, () => ({
       fusion: hideFusion(ctx),
       adaptive: hideAdaptive(ctx),

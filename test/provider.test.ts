@@ -285,3 +285,7 @@ test("utility rejects when the model is unavailable", async () => {
     provider.utility?.complete({ system: "s", prompt: "p" }, new AbortController().signal),
   ).rejects.toThrow('model "nope" is not available');
 });
+
+test("the provider names the Devin logo for UIs", () => {
+  expect((setup().provider as { icon?: string }).icon).toBe("devin");
+});
