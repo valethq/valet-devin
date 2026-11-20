@@ -32,11 +32,16 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
     denyKinds: cfg().denyKinds ?? [],
     log: ctx.log,
   });
-  ctx.onConfigChange((next, prev) => {
+  // The ACP client is spawned once: refuse a save that changes how (the pre-save veto, so applied config never
+  // drifts from what is running). The config file plus a restart still changes them.
+  ctx.onConfigCheck((next, prev) => {
     const spawned = (c: DevinConfig) => JSON.stringify([c.command, c.refusalFallback, c.denyKinds]);
     if (spawned(next) !== spawned(prev))
-      throw new Error("command, refusalFallback and denyKinds need a restart");
+      throw new Error(
+        "command, refusalFallback and denyKinds can't change while valet runs: set them in the config file and restart",
+      );
   });
+  ctx.onConfigChange(() => {}); // everything else is read from ctx.config when it is used
   const sessions = new Set<DevinSession>();
   const tools = toolEndpoint(ctx.http, {
     serverName: "valet",

@@ -234,15 +234,19 @@ test("rpc errors carry data", async () => {
   ).rejects.toThrow("Invalid params: Invalid value 'x' for config option 'model'");
 });
 
-test("a reloaded permissionMode applies to the next session; spawn settings need a restart", async () => {
-  const { cfg, reconfigure, open, logFile } = setup();
+test("a reloaded permissionMode applies to the next session; spawn settings are refused before the save", async () => {
+  const { cfg, ctx, reconfigure, open, logFile } = setup();
   await reconfigure({ ...cfg, permissionMode: "plan" });
   await open();
   const c = calls(logFile);
   expect(c.find((x) => x.method === "session/set_mode")?.params.modeId).toBe("plan");
   await expect(reconfigure({ ...cfg, permissionMode: "plan", denyKinds: ["execute"] })).rejects.toThrow(
-    "need a restart",
+    "set them in the config file and restart",
   );
+  expect(ctx.config.denyKinds).toEqual(cfg.denyKinds);
+  // The refused save left nothing behind, so a later unrelated save goes through.
+  await reconfigure({ ...cfg, permissionMode: "accept-edits" });
+  expect(ctx.config.permissionMode).toBe("accept-edits");
 });
 
 test("/compact is a turn that reports the compaction start and end", async () => {
