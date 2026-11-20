@@ -145,20 +145,16 @@ describe("usageMeter", () => {
 describe("usageBlocks", () => {
   test("plan badge, meters, extra balance, and a refresh action", () => {
     const blocks = usageBlocks({ snapshot: parseDevinUserStatus(maxPlan), at: NOW }, NOW);
-    const [usage, footer] = blocks;
-    expect(usage).toMatchObject({ type: "group", title: "Plan usage" });
-    if (usage?.type !== "group" || footer?.type !== "group") throw new Error("expected two groups");
-    expect(usage.blocks.map((b) => b.type)).toEqual(["badge", "meter", "stat"]);
-    expect(usage.blocks[0]).toEqual({ type: "badge", text: "Max" });
-    expect(usage.blocks[2]).toEqual({ type: "stat", label: "Extra usage balance", value: "$9.80" });
-    expect(footer.blocks.map((b) => b.type)).toEqual(["text", "button"]);
-    expect(footer.blocks[1]).toMatchObject({ type: "button", label: "Refresh now", action: "refresh" });
+    expect(blocks.map((b) => b.type)).toEqual(["badge", "meter", "stat", "note", "action"]);
+    expect(blocks[0]).toEqual({ type: "badge", text: "Max" });
+    expect(blocks[2]).toEqual({ type: "stat", label: "Extra usage balance", value: "$9.80" });
+    expect(blocks[4]).toEqual({ type: "action", text: "Refresh now", action: "refresh" });
   });
 
   test("missing and failed readings", () => {
-    expect(usageBlocks({}, NOW)).toEqual([{ type: "text", text: "Reading usage...", tone: "normal" }]);
+    expect(usageBlocks({}, NOW)).toEqual([{ type: "note", text: "Reading usage...", tone: "normal" }]);
     expect(usageBlocks({ error: "boom" }, NOW)[0]).toEqual({
-      type: "text",
+      type: "note",
       text: "Could not read usage: boom",
       tone: "warning",
     });
@@ -173,7 +169,7 @@ describe("usageBlocks", () => {
       NOW,
     );
     expect(signedOut[0]).toEqual({
-      type: "text",
+      type: "note",
       text: "Devin CLI is not logged in. Run `devin auth login`.",
     });
   });
@@ -247,7 +243,7 @@ describe("createUsage", () => {
     });
     const blocks = await failed.view();
     expect(blocks[0]).toEqual({
-      type: "text",
+      type: "note",
       text: "Could not read usage: HTTP 503 (unavailable)",
       tone: "warning",
     });

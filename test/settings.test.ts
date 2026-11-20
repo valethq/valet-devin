@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { PluginContext, SettingsPanel } from "@valethq/sdk";
+import type { PluginContext, Setting, SettingsContribution } from "@valethq/sdk";
 import type { DevinConfig } from "../src/config";
 import { hideAdaptive, hideFusion, permissionMode, registerSettings, utilityModel } from "../src/settings";
 import { createUsage } from "../src/usage";
@@ -13,7 +13,11 @@ function ctxWith(config: DevinConfig) {
 }
 
 const manifest = JSON.parse(readFileSync(join(import.meta.dir, "..", "manifest.json"), "utf8"));
-const props = manifest.configSchema.properties as Record<string, { default?: unknown }>;
+const props: Record<string, { default?: unknown }> = Object.fromEntries(
+  (manifest.settings.sections.inference.subsections as { items: Setting[] }[])
+    .flatMap((s) => s.items)
+    .map((s) => [s.id, { default: s.input.default }]),
+);
 
 describe("settings are config", () => {
   test("accessors fall back to the same defaults the manifest declares", () => {
@@ -41,8 +45,8 @@ describe("settings are config", () => {
     expect(props.customModels).toBeUndefined();
   });
 
-  test("the manifest provides the settings scope for the usage panel", () => {
-    expect(manifest.provides).toEqual(["inference@1", "settings@1"]);
+  test("the manifest provides the settings scope for the usage subsection", () => {
+    expect(manifest.provides).toEqual(["inference@1", "settings@2"]);
   });
 
   test("setConfig updates what accessors read", () => {
@@ -56,7 +60,7 @@ describe("settings are config", () => {
 });
 
 describe("usage on the settings page", () => {
-  test("a view-only panel: plan usage, refreshed on a timer, with a refresh action", async () => {
+  test("a runtime subsection: plan usage, refreshed on a timer, with a refresh action", async () => {
     const { ctx } = fakeCtx({ command: ["true"] });
     const usage = createUsage(ctx, {
       now: () => Date.parse("2026-11-19T12:00:00Z"),
@@ -76,13 +80,13 @@ describe("usage on the settings page", () => {
           { status: 200 },
         ),
     });
-    let panel: SettingsPanel | undefined;
+    let panel: SettingsContribution | undefined;
     registerSettings(
       {
         ...ctx,
         scopes: {
           define() {},
-          provide(_s: string, impl: SettingsPanel) {
+          provide(_s: string, impl: SettingsContribution) {
             panel = impl;
             return { dispose() {} };
           },
@@ -90,10 +94,10 @@ describe("usage on the settings page", () => {
       } as unknown as PluginContext<DevinConfig>,
       usage,
     );
-    expect(panel?.schema).toBeUndefined();
-    expect(panel?.title).toBe("Plan usage");
-    expect(panel?.refreshMs).toBe(15_000);
-    const blocks = (await panel?.view?.()) ?? [];
+    const [sub] = (await panel?.subsections?.()) ?? [];
+    expect(sub?.label).toBe("Plan usage");
+    expect(sub?.refreshMs).toBe(15_000);
+    const blocks = sub?.items ?? [];
     const text = JSON.stringify(blocks);
     expect(text).toContain('"text":"Max"');
     expect(text).toContain('"label":"Weekly"');
