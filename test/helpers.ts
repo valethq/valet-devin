@@ -21,6 +21,7 @@ export function fakeCtx(config: DevinConfig, blobs: Record<string, string> = {})
   const disposers: (() => void | Promise<void>)[] = [];
   let provided: AgentProvider | undefined;
   const listeners: ((next: DevinConfig, prev: DevinConfig) => void | Promise<void>)[] = [];
+  let current = config;
   const logger = (level: string) => (msg: string, data?: Record<string, unknown>) =>
     logs.push({ level, msg, data });
   const ctx = {
@@ -29,7 +30,9 @@ export function fakeCtx(config: DevinConfig, blobs: Record<string, string> = {})
       route: () => ({ dispose() {} }),
       url: (path: string) => `http://127.0.0.1:7437/plugins/valet-devin${path}`,
     },
-    config,
+    get config() {
+      return current;
+    },
     log: { debug: logger("debug"), info: logger("info"), warn: logger("warn"), error: logger("error") },
     onDispose: (fn: () => void) => disposers.push(fn),
     onConfigChange: (fn: (typeof listeners)[number]) => listeners.push(fn),
@@ -66,14 +69,20 @@ export function fakeCtx(config: DevinConfig, blobs: Record<string, string> = {})
     },
   } as unknown as PluginContext<DevinConfig>;
   plugin.activate(ctx);
+  /** What core does on a settings save: the new block replaces ctx.config. */
+  const setConfig = (patch: Partial<DevinConfig>) => {
+    current = { ...current, ...patch };
+  };
   return {
     provider: provided as AgentProvider,
     state,
     logs,
     kv,
+    ctx,
+    setConfig,
     reconfigure: async (next: DevinConfig) => {
-      const prev = ctx.config;
-      (ctx as { config: DevinConfig }).config = next;
+      const prev = current;
+      current = next;
       for (const fn of listeners) await fn(next, prev);
     },
     dispose: async () => {

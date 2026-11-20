@@ -26,8 +26,12 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
   provider: AgentProvider;
   dispose(): void;
 } {
-  const cfg = ctx.config ?? {};
-  const client = new AcpClient({ command: spawnCommand(cfg), denyKinds: cfg.denyKinds ?? [], log: ctx.log });
+  const cfg = () => ctx.config ?? {};
+  const client = new AcpClient({
+    command: spawnCommand(cfg()),
+    denyKinds: cfg().denyKinds ?? [],
+    log: ctx.log,
+  });
   ctx.onConfigChange((next, prev) => {
     const spawned = (c: DevinConfig) => JSON.stringify([c.command, c.refusalFallback, c.denyKinds]);
     if (spawned(next) !== spawned(prev))
@@ -50,16 +54,11 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
     kind: "agent",
     id: PROVIDER_KEY,
     label: "Devin CLI",
-    listModels: modelLister(
-      {
-        get models() {
-          return ctx.config?.models;
-        },
-      },
-      undefined,
-      acpModels,
-      () => ({ fusion: hideFusion(ctx), adaptive: hideAdaptive(ctx) }),
-    ),
+    icon: "devin",
+    listModels: modelLister(cfg, undefined, acpModels, () => ({
+      fusion: hideFusion(ctx),
+      adaptive: hideAdaptive(ctx),
+    })),
     utility: createUtility(ctx, client),
     async open(opts): Promise<AgentSession> {
       const session = ctx.store.sessions.get(opts.sessionId);
@@ -87,6 +86,8 @@ export function createProvider(ctx: PluginContext<DevinConfig>): {
         id,
         cwd,
         model: opts.model,
+        ...(opts.effort === undefined ? {} : { effort: opts.effort }),
+        ...(opts.fast === undefined ? {} : { fast: opts.fast }),
         configOptions,
         mcpServers,
         mode: permissionMode(ctx),

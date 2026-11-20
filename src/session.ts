@@ -1,6 +1,6 @@
-import type { AgentEvent, AgentSession, Logger, ModelContent } from "@valethq/sdk";
+import type { AgentEvent, AgentSession, Logger, ModelContent, ModelOptions } from "@valethq/sdk";
 import type { AcpClient } from "./acp";
-import { optionValues, resolveModel } from "./models";
+import { asEffort, optionValues, toAcp } from "./models";
 import { drainText, mapStop, mapUpdate, newUpdateState, type UpdateState } from "./events";
 
 export interface SessionInit {
@@ -8,6 +8,8 @@ export interface SessionInit {
   id: string;
   cwd: string;
   model: string;
+  effort?: string;
+  fast?: boolean;
   mode: string;
   configOptions: unknown;
   reseeded: boolean;
@@ -25,10 +27,14 @@ export class DevinSession implements AgentSession {
   private generation: number;
   private interrupted = "";
   private lastUsed?: number;
+  private effort?: string;
+  private fast?: boolean;
 
   constructor(private init: SessionInit) {
     this.reseeded = init.reseeded;
     this.generation = init.client.generation;
+    this.effort = asEffort(init.effort) ?? init.effort;
+    this.fast = init.fast;
   }
 
   get options(): unknown {
@@ -42,7 +48,7 @@ export class DevinSession implements AgentSession {
   async configure(): Promise<void> {
     const { client, id, mode, model } = this.init;
     await client.request("session/set_mode", { sessionId: id, modeId: mode });
-    if (model) await this.applyModel(model);
+    if (model) await this.applyModel(model, { effort: this.effort, fast: this.fast });
   }
 
   private async setOption(configId: string, value: string): Promise<void> {
@@ -54,17 +60,30 @@ export class DevinSession implements AgentSession {
     if (r.configOptions) this.init.configOptions = r.configOptions;
   }
 
-  private async applyModel(id: string): Promise<void> {
-    const resolved = resolveModel(id, { models: optionValues(this.init.configOptions, "model") });
-    if (!resolved) throw new Error(`model "${id}" is not available in devin acp`);
-    await this.setOption("model", resolved.model);
+  private async applyModel(id: string, options: ModelOptions): Promise<void> {
+    const acpModels = optionValues(this.init.configOptions, "model");
+    const extras = {
+      ...(options.effort ? { thoughtLevel: options.effort } : {}),
+      ...(options.fast === true
+        ? { speed: "fast" as const }
+        : options.fast === false
+          ? { speed: "standard" as const }
+          : {}),
+    };
+    // Unknown ids pass through for valet-agent catalog customs; ACP rejects ones it does not take.
+    const resolved = toAcp(id, options, acpModels) ?? { model: id, ...extras };
+    try {
+      await this.setOption("model", resolved.model);
+    } catch {
+      throw new Error(`model "${id}" is not available in devin acp`);
+    }
     if (
       resolved.thoughtLevel &&
       optionValues(this.init.configOptions, "thought_level").includes(resolved.thoughtLevel)
     )
       await this.setOption("thought_level", resolved.thoughtLevel);
-    if (optionValues(this.init.configOptions, "speed").length)
-      await this.setOption("speed", resolved.speed ?? "standard");
+    if (resolved.speed && optionValues(this.init.configOptions, "speed").length)
+      await this.setOption("speed", resolved.speed);
   }
 
   private async ready(): Promise<void> {
@@ -77,9 +96,11 @@ export class DevinSession implements AgentSession {
     await this.configure();
   }
 
-  async setModel(model: string): Promise<void> {
+  async setModel(model: string, options: ModelOptions): Promise<void> {
     await this.ready();
-    await this.applyModel(model);
+    this.effort = asEffort(options.effort) ?? options.effort;
+    this.fast = options.fast;
+    await this.applyModel(model, { effort: this.effort, fast: this.fast });
     this.init.model = model;
   }
 
