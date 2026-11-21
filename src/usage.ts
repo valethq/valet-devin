@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { PluginContext, SettingsBlock, SettingsTone } from "@valethq/sdk";
+import type { PluginContext, Display, SettingsTone } from "@valethq/sdk";
 import type { DevinConfig } from "./config";
 
 const DAY_MS = 86_400_000;
@@ -203,7 +203,7 @@ const toneOf = (percent: number): SettingsTone =>
   percent >= 95 ? "critical" : percent >= 80 ? "warning" : "normal";
 
 /** One meter per window: the bar shows what is left, the marker where an even burn-down would be by now. */
-export function usageMeter(w: UsageWindow, now: number): SettingsBlock {
+export function usageMeter(w: UsageWindow, now: number): Display {
   const used = Math.round(Math.min(100, Math.max(0, w.percent)));
   const left = 100 - used;
   const resetsAt = w.resetsAt;
@@ -234,19 +234,19 @@ export function usageMeter(w: UsageWindow, now: number): SettingsBlock {
 
 const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
-export function usageBlocks(s: UsageState, now = Date.now()): SettingsBlock[] {
-  const out: SettingsBlock[] = [];
+export function usageBlocks(s: UsageState, now = Date.now()): Display[] {
+  const out: Display[] = [];
   const snap = s.snapshot;
   if (!snap) {
     out.push({
-      type: "text",
+      type: "note",
       text: s.error ? `Could not read usage: ${s.error}` : "Reading usage...",
       tone: s.error ? "warning" : "normal",
     });
   } else if (!snap.available) {
-    out.push({ type: "text", text: snap.reason ?? "Plan limits are not available for this login." });
+    out.push({ type: "note", text: snap.reason ?? "Plan limits are not available for this login." });
   } else {
-    const body: SettingsBlock[] = [
+    const body: Display[] = [
       ...(snap.plan ? [{ type: "badge" as const, text: capitalize(snap.plan) }] : []),
       ...snap.windows.map((w) => usageMeter(w, now)),
       ...(snap.extraUsd !== undefined
@@ -254,26 +254,23 @@ export function usageBlocks(s: UsageState, now = Date.now()): SettingsBlock[] {
         : []),
     ];
     if (snap.windows.length === 0 && snap.extraUsd === undefined) {
-      body.push({ type: "text", text: "No quota data available." });
+      body.push({ type: "note", text: "No quota data available." });
     }
-    out.push({ type: "group", title: "Plan usage", blocks: body });
-    if (s.error) out.push({ type: "text", text: `Could not refresh usage: ${s.error}`, tone: "warning" });
+    out.push(...body);
+    if (s.error) out.push({ type: "note", text: `Could not refresh usage: ${s.error}`, tone: "warning" });
   }
   if (snap || s.error) {
-    out.push({
-      type: "group",
-      layout: "row",
-      blocks: [
-        ...(s.at === undefined ? [] : [{ type: "text" as const, text: `Updated ${clock(s.at)}` }]),
-        { type: "button", label: "Refresh now", action: "refresh" },
-      ],
+    out.push(...(s.at === undefined ? [] : [{ type: "note" as const, text: `Updated ${clock(s.at)}` }]), {
+      type: "action",
+      text: "Refresh now",
+      action: "refresh",
     });
   }
   return out;
 }
 
 export interface UsageService {
-  view(): Promise<SettingsBlock[]>;
+  view(): Promise<Display[]>;
   refresh(force?: boolean): Promise<void>;
 }
 

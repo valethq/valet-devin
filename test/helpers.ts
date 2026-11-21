@@ -21,6 +21,7 @@ export function fakeCtx(config: DevinConfig, blobs: Record<string, string> = {})
   const disposers: (() => void | Promise<void>)[] = [];
   let provided: AgentProvider | undefined;
   const listeners: ((next: DevinConfig, prev: DevinConfig) => void | Promise<void>)[] = [];
+  const checks: typeof listeners = [];
   let current = config;
   const logger = (level: string) => (msg: string, data?: Record<string, unknown>) =>
     logs.push({ level, msg, data });
@@ -36,6 +37,7 @@ export function fakeCtx(config: DevinConfig, blobs: Record<string, string> = {})
     log: { debug: logger("debug"), info: logger("info"), warn: logger("warn"), error: logger("error") },
     onDispose: (fn: () => void) => disposers.push(fn),
     onConfigChange: (fn: (typeof listeners)[number]) => listeners.push(fn),
+    onConfigCheck: (fn: (typeof checks)[number]) => checks.push(fn),
     scopes: {
       define: noop,
       provide: (s: string, impl: AgentProvider) => {
@@ -80,8 +82,10 @@ export function fakeCtx(config: DevinConfig, blobs: Record<string, string> = {})
     kv,
     ctx,
     setConfig,
+    /** A settings save as core runs it: checks first (a throw refuses it, nothing changes), then listeners. */
     reconfigure: async (next: DevinConfig) => {
       const prev = current;
+      for (const fn of checks) await fn(next, prev);
       current = next;
       for (const fn of listeners) await fn(next, prev);
     },

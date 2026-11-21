@@ -25,17 +25,13 @@ export function utilityModel(ctx: Ctx): string | undefined {
   return v === "" ? undefined : v;
 }
 
-/** The plugin's settings page carries live plan usage above the config form. */
+/** settings@2: live plan usage as a runtime subsection. */
 export function registerSettings(ctx: Ctx, usage: UsageService = createUsage(ctx)): void {
-  ctx.scopes.define({ name: "settings", version: 1, cardinality: "many" });
-  ctx.scopes.provide(
-    "settings",
-    {
-      title: "Plan usage",
-      view: () => usage.view(),
-      refreshMs: 15_000,
-      actions: { refresh: () => usage.refresh(true) },
-    },
-    { key: "valet-devin" },
-  );
+  ctx.scopes.define({ name: "settings", version: 2, cardinality: "many" });
+  ctx.scopes.provide("settings", {
+    actions: { refresh: () => usage.refresh(true) },
+    subsections: async () => [
+      { id: "usage", label: "Plan usage", order: -1, refreshMs: 15_000, items: await usage.view() },
+    ],
+  });
 }
