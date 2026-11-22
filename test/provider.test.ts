@@ -52,7 +52,13 @@ test("open, prompt maps events, setModel", async () => {
   const c = calls(logFile);
   expect(c.find((x) => x.method === "session/new")?.params).toEqual({
     cwd: "/tmp",
-    mcpServers: [expect.objectContaining({ type: "http", name: "valet" })],
+    mcpServers: [
+      expect.objectContaining({
+        type: "http",
+        name: "valet",
+        url: "http://127.0.0.1:7437/plugins/valet-devin/mcp/s1",
+      }),
+    ],
   });
   expect(c.find((x) => x.method === "session/set_mode")?.params.modeId).toBe("accept-edits");
   expect(c.filter((x) => x.method === "session/set_config_option").map((x) => x.params.value)).toEqual([
