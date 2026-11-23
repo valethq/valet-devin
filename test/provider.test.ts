@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AcpClient } from "../src/acp";
@@ -10,6 +10,11 @@ const fakeCtxLog = { debug: noop, info: noop, warn: noop, error: noop };
 const disposers: (() => Promise<void>)[] = [];
 afterAll(async () => {
   for (const d of disposers) await d();
+});
+
+test("the manifest requires the transport so ctx.http.url is set before activate", () => {
+  const manifest = JSON.parse(readFileSync(join(import.meta.dir, "..", "manifest.json"), "utf8"));
+  expect(manifest.optionalRequires).toContain("transport@1");
 });
 
 function setup(extra = {}, blobs: Record<string, string> = {}) {
@@ -52,7 +57,13 @@ test("open, prompt maps events, setModel", async () => {
   const c = calls(logFile);
   expect(c.find((x) => x.method === "session/new")?.params).toEqual({
     cwd: "/tmp",
-    mcpServers: [expect.objectContaining({ type: "http", name: "valet" })],
+    mcpServers: [
+      expect.objectContaining({
+        type: "http",
+        name: "valet",
+        url: "http://127.0.0.1:7437/plugins/valet-devin/mcp/s1",
+      }),
+    ],
   });
   expect(c.find((x) => x.method === "session/set_mode")?.params.modeId).toBe("accept-edits");
   expect(c.filter((x) => x.method === "session/set_config_option").map((x) => x.params.value)).toEqual([
