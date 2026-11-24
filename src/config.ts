@@ -2,7 +2,7 @@ export type PermissionMode = "normal" | "accept-edits" | "smart" | "plan" | "byp
 export const MODES: readonly PermissionMode[] = ["normal", "accept-edits", "smart", "plan", "bypass"];
 
 /** Every effort Devin's model list uses as a suffix, lowest first. */
-export const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 export type Effort = (typeof EFFORTS)[number];
 
 export interface ModelConfig {
@@ -27,10 +27,10 @@ export interface DevinConfig {
   hideFusion?: boolean;
   hideAdaptive?: boolean;
   /** Model for small side jobs such as session naming. Empty string turns them off. */
-  utilityModel?: string;
+  utilityModel?: { model?: string; effort?: Effort };
 }
 
-export const DEFAULT_UTILITY_MODEL = "claude-haiku-5-5";
+export const DEFAULT_UTILITY_MODEL: { model: string; effort?: Effort } = { model: "claude-haiku-5-5" };
 
 const CLAUDE5_EFFORTS: Effort[] = ["low", "medium", "high", "xhigh", "max"];
 

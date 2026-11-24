@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { drainText, mapStop, mapUpdate, newUpdateState } from "../src/events";
-import { collapseModels, modelLister, parseModels, resolveModel, toAcp } from "../src/models";
+import { collapseModels, modelLister, parseModels, toAcp } from "../src/models";
 
 const SAMPLE = `Available models (51 families)
 
@@ -208,11 +208,6 @@ test("mapStop", () => {
 });
 
 const ACP = ["swe-2-high", "claude-opus-5-5-medium", "gpt-6-sol-medium", "glm-5-2"];
-
-test("resolveModel strips a trailing effort for the utility path", () => {
-  expect(resolveModel("claude-haiku-5-5-low")).toEqual({ model: "claude-haiku-5-5", effort: "low" });
-  expect(resolveModel("swe-2")).toEqual({ model: "swe-2" });
-});
 
 test("toAcp maps base model + options onto ACP config values", () => {
   expect(toAcp("swe-2", { effort: "medium", fast: true }, ACP)).toEqual({

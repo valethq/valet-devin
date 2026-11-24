@@ -271,7 +271,7 @@ test("/compact is a turn that reports the compaction start and end", async () =>
 });
 
 test("utility completes in a throwaway plan-mode session on the Utility model", async () => {
-  const { provider, logFile } = setup({ utilityModel: "swe-2" });
+  const { provider, logFile } = setup({ utilityModel: { model: "swe-2" } });
   expect(provider.utility?.model()).toBe("swe-2");
   const out = await provider.utility?.complete(
     { system: "Say pong.", prompt: "ping" },
@@ -286,7 +286,7 @@ test("utility completes in a throwaway plan-mode session on the Utility model", 
 });
 
 test("utility is off for an empty model and defaults to Haiku", async () => {
-  const off = setup({ utilityModel: "" }).provider.utility;
+  const off = setup({ utilityModel: { model: "" } }).provider.utility;
   expect(off?.model()).toBeUndefined();
   await expect(off?.complete({ system: "s", prompt: "p" }, new AbortController().signal)).rejects.toThrow(
     "no utility model",
@@ -295,7 +295,7 @@ test("utility is off for an empty model and defaults to Haiku", async () => {
 });
 
 test("utility rejects when the model is unavailable", async () => {
-  const { provider } = setup({ utilityModel: "nope" });
+  const { provider } = setup({ utilityModel: { model: "nope" } });
   await expect(
     provider.utility?.complete({ system: "s", prompt: "p" }, new AbortController().signal),
   ).rejects.toThrow('model "nope" is not available');

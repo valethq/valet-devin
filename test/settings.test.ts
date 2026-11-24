@@ -25,7 +25,7 @@ describe("settings are config", () => {
     expect(permissionMode(ctx)).toBe(props.permissionMode?.default as "accept-edits");
     expect(hideFusion(ctx)).toBe(props.hideFusion?.default as boolean);
     expect(hideAdaptive(ctx)).toBe(props.hideAdaptive?.default as boolean);
-    expect(utilityModel(ctx)).toBe(props.utilityModel?.default as string);
+    expect(utilityModel(ctx)).toEqual(props.utilityModel?.default as { model: string });
   });
 
   test("config values win; an empty utility model turns side jobs off", () => {
@@ -33,7 +33,7 @@ describe("settings are config", () => {
       permissionMode: "plan",
       hideFusion: false,
       hideAdaptive: false,
-      utilityModel: " ",
+      utilityModel: { model: " " },
     });
     expect(permissionMode(ctx)).toBe("plan");
     expect(hideFusion(ctx)).toBe(false);
@@ -52,10 +52,10 @@ describe("settings are config", () => {
   test("setConfig updates what accessors read", () => {
     const { ctx, setConfig } = fakeCtx({ command: ["true"], permissionMode: "smart" });
     expect(permissionMode(ctx)).toBe("smart");
-    setConfig({ permissionMode: "plan", hideFusion: false, utilityModel: "swe-2" });
+    setConfig({ permissionMode: "plan", hideFusion: false, utilityModel: { model: "swe-2" } });
     expect(permissionMode(ctx)).toBe("plan");
     expect(hideFusion(ctx)).toBe(false);
-    expect(utilityModel(ctx)).toBe("swe-2");
+    expect(utilityModel(ctx)).toEqual({ model: "swe-2" });
   });
 });
 
@@ -92,6 +92,7 @@ describe("usage on the settings page", () => {
           },
         },
       } as unknown as PluginContext<DevinConfig>,
+      async () => [],
       usage,
     );
     const [sub] = (await panel?.subsections?.()) ?? [];

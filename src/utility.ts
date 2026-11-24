@@ -2,7 +2,6 @@ import { tmpdir } from "node:os";
 import type { PluginContext, UtilityModel } from "@valethq/sdk";
 import type { AcpClient } from "./acp";
 import type { DevinConfig } from "./config";
-import { resolveModel } from "./models";
 import { DevinSession } from "./session";
 import { utilityModel } from "./settings";
 
@@ -11,11 +10,11 @@ const RULES = "Reply with the answer only. Do not use tools.";
 /** Side jobs run in a throwaway ACP session in the temp dir, in plan mode so nothing can be edited. */
 export function createUtility(ctx: PluginContext<DevinConfig>, client: AcpClient): UtilityModel {
   return {
-    model: () => utilityModel(ctx),
+    model: () => utilityModel(ctx)?.model,
     async complete(req, signal) {
       const picked = utilityModel(ctx);
       if (!picked) throw new Error("no utility model is configured");
-      const { model, effort } = resolveModel(picked);
+      const { model, effort } = picked;
       const cwd = tmpdir();
       await client.ensure();
       const created = await client.request("session/new", { cwd, mcpServers: [] });

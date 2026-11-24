@@ -124,12 +124,6 @@ export function collapseModels(variants: ParsedVariant[]): ModelConfig[] {
   });
 }
 
-/** For the utility model setting, which may name an effort: "claude-haiku-5-5-low" -> { model, effort }. */
-export function resolveModel(id: string): { model: string; effort?: Effort } {
-  const effort = EFFORT_SUFFIX.exec(id)?.[1] as Effort | undefined;
-  return effort ? { model: id.replace(EFFORT_SUFFIX, ""), effort } : { model: id };
-}
-
 /** An effort Devin takes, or undefined for anything else. */
 export const asEffort = (v: string | undefined): Effort | undefined =>
   v !== undefined && (EFFORTS as readonly string[]).includes(v) ? (v as Effort) : undefined;

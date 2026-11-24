@@ -44,17 +44,55 @@
                       "label": "Bypass permissions"
                     }
                   ],
-                  "default": "accept-edits"
+                  "default": "accept-edits",
+                  "style": "cards"
                 }
               },
               {
                 "id": "utilityModel",
                 "label": "Utility model",
-                "summary": "Model for small side jobs such as naming sessions; may end in an effort (claude-haiku-5-5-low). Empty turns them off.",
+                "summary": "Model and effort for small side jobs such as naming sessions. No model turns them off.",
                 "input": {
-                  "type": "string",
-                  "default": "claude-haiku-5-5"
-                }
+                  "type": "group",
+                  "layout": "row",
+                  "inputs": [
+                    {
+                      "id": "model",
+                      "type": "ref",
+                      "label": "Model",
+                      "placeholder": "Off",
+                      "options": {
+                        "from": "models"
+                      }
+                    },
+                    {
+                      "id": "effort",
+                      "type": "select",
+                      "label": "Effort",
+                      "options": {
+                        "from": "efforts",
+                        "args": {
+                          "model": {
+                            "$": "utilityModel.model"
+                          }
+                        }
+                      },
+                      "when": {
+                        "set": "utilityModel.model"
+                      }
+                    }
+                  ],
+                  "default": {
+                    "model": "claude-haiku-5-5"
+                  }
+                },
+                "migrate": [
+                  {
+                    "map": {
+                      "match": "^\\s*(?<model>.*?)(?:-(?<effort>low|medium|high|xhigh|max|minimal|none))?\\s*$"
+                    }
+                  }
+                ]
               }
             ]
           },
